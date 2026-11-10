@@ -8,7 +8,13 @@ A lightweight Windows 11 app that switches a PC between two Bluetooth adapters w
 Windows only supports one active Bluetooth adapter at a time, so switching means disabling
 one adapter and enabling the other, then verifying the result.
 
-**Status: investigation complete, stack recommended but not confirmed, no application code yet.**
+**Status: stack confirmed (C# / .NET 10 / WinForms). Read-only detection PoC works. No switching has been tested yet.**
+
+Run the read-only status check (no admin rights, changes nothing):
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File .\poc\Get-AdapterStatus.ps1
+```
 
 ## v1 scope
 
@@ -34,7 +40,7 @@ Out of scope for v1: DualSense button-combo switching, system tray, automatic Du
 | Built-in | Yes (`InLocalMachineContainer`, removal policy 1) | No (removable, removal policy 3) |
 | Status at inspection | Disabled (problem code 22) | Started, hosting the Bluetooth stack |
 
-- The dongle has no USB serial number, so its instance ID is derived from the port. Six stale
+- The dongle has no USB serial number, so its instance ID is derived from the port. Five stale
   instances exist from other ports. Moving it to another port creates a new, *enabled*
   instance - the app must match on hardware ID and handle this.
 - Elevation: the inspecting shell was not elevated; changing device state needs administrator rights.
@@ -70,7 +76,7 @@ The Bluetooth radio on/off toggle only affects the active adapter and cannot swi
 Required sequence: disable current -> wait until stopped -> enable target -> wait until started
 and its Bluetooth enumerator child appears -> if that fails, re-enable the original.
 
-## Recommended stack (pending confirmation)
+## Stack (confirmed 2026-11-10)
 
 **C# on .NET 10, WinForms, calling the Configuration Manager API directly, with an
 administrator manifest.** The proof of concept comes first as a short PowerShell script using `pnputil`.
@@ -102,8 +108,9 @@ Recovery if Bluetooth is lost:
 
 ## Plan
 
-1. Confirm stack. *(next)*
-2. PoC: read-only status script, then one approved switch in each direction, measuring timing.
+1. Confirm stack. *(done)*
+2. PoC: read-only status script *(done, `poc/Get-AdapterStatus.ps1`)*, then one approved
+   switch in each direction, measuring timing. *(next, needs explicit approval)*
 3. Core logic: identification, switch, verification, rollback, error reporting.
 4. UI: status of both adapters, one switch button.
 5. Packaging.

@@ -29,8 +29,10 @@ Windows 11 desktop app for one-click switching between two Bluetooth adapters on
 ## Phased workflow
 
 1. **Investigate** (done) - read-only inventory and failure analysis. See README.
-2. **Decide stack** - recommendation is in README; not final until the user confirms.
-3. **Switching proof of concept** - smallest possible script/CLI, run only with per-test approval.
+2. **Decide stack** (done) - C# on .NET 10, WinForms, Configuration Manager API, admin manifest.
+3. **Switching proof of concept** - read-only detection is done (`poc/Get-AdapterStatus.ps1`).
+   The switching test is next and runs only with per-test approval, after confirming the
+   user's keyboard and mouse do not depend on Bluetooth.
 4. **Core switching logic** - detect, switch, verify, roll back on failure, clear errors.
 5. **Desktop UI** - status for both adapters, one-click switch.
 6. **Packaging** - single distributable, elevation handled cleanly.
@@ -43,7 +45,9 @@ DualSense button-combo switching, system tray, automatic DualSense reconnection.
 
 ## Conventions
 
-- Stack is undecided: do not add application code, project files, or dependencies until it is confirmed.
+- PoC scripts live in `poc/` and are PowerShell 5.1 compatible. The app itself is C#.
+- The .NET SDK is not installed yet (runtimes only); ask before installing it.
+- The repository is local only for now.
 - Keep it small: prefer OS-provided mechanisms over third-party dependencies.
 - Every device-state change must be verified by re-reading device status, with a timeout.
 - State clearly whether a claim is verified on this machine or a hypothesis.
