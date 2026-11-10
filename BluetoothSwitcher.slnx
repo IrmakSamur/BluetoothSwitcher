@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BluetoothSwitcher.App/BluetoothSwitcher.App.csproj" />
+    <Project Path="src/BluetoothSwitcher.Core/BluetoothSwitcher.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BluetoothSwitcher.Core.Tests/BluetoothSwitcher.Core.Tests.csproj" />
+  </Folder>
+</Solution>

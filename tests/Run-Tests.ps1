@@ -10,6 +10,7 @@
       1. Syntax check of the PoC scripts.
       2. State parser tests (Test-StateParser.ps1).
       3. Mocked switching scenarios (Invoke-SwitchScenario.ps1), each in its own process.
+      4. C# unit tests for BluetoothSwitcher.Core (simulated hardware only).
 
     Exit code 0 when everything passes, 1 otherwise.
 
@@ -61,8 +62,20 @@ foreach ($name in $scenarios) {
 }
 "scenarios passed: $passed of $($scenarios.Count)"
 
+'=== 4. core library (C#) ==='
+$dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+if (-not $dotnet -or -not (& dotnet --list-sdks)) {
+    'SKIPPED: the .NET SDK is not installed.'
+} else {
+    $env:DOTNET_NOLOGO = '1'; $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+    $coreOut = & dotnet run --project (Join-Path $PSScriptRoot 'BluetoothSwitcher.Core.Tests') -c Release
+    $coreExit = $LASTEXITCODE
+    $coreOut | Where-Object { $_ -notlike 'PASS*' }
+    if ($coreExit -ne 0) { $failures++ }
+}
+
 if (-not $SkipLive) {
-    '=== 4. real devices untouched ==='
+    '=== 5. real devices untouched ==='
     $same = ($before -eq (Get-DeviceSnapshot))
     if (-not $same) { $failures++ }
     "{0} real Bluetooth device listing identical before and after" -f $(if ($same) { 'PASS' } else { 'FAIL' })

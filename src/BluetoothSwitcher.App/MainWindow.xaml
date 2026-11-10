@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="BluetoothSwitcher.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Bluetooth Switcher">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <!-- Sized to its content; the window height follows it (see MainWindow.xaml.cs). -->
+    <Grid x:Name="Root" RequestedTheme="Dark" VerticalAlignment="Top">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title bar (draggable) -->
+        <Grid x:Name="AppTitleBar" Height="44" Padding="18,0,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <TextBlock Text="Bluetooth Switcher"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center" />
+                <Border x:Name="DemoBadge" Visibility="Collapsed"
+                        Background="{ThemeResource SystemFillColorAttentionBackgroundBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                        CornerRadius="4" Padding="6,1">
+                    <TextBlock Text="Demo" Style="{StaticResource CaptionTextBlockStyle}" />
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="1" Padding="20,6,20,20" Spacing="14">
+
+            <!-- Current state -->
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="&#xE702;" FontSize="20" VerticalAlignment="Center"
+                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                <TextBlock x:Name="CurrentText" Grid.Column="1" Text="Checking adapters"
+                           Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                <FontIcon x:Name="StateIcon" Grid.Column="2" Glyph="&#xE930;" FontSize="18"
+                          VerticalAlignment="Center" Visibility="Collapsed"
+                          Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
+            </Grid>
+
+            <!-- The two adapters -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Button x:Name="UpstairsCard" Click="OnUpstairsClick"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        Padding="12,18" CornerRadius="8" BorderThickness="1"
+                        AutomationProperties.Name="Switch to Upstairs">
+                    <StackPanel Spacing="6" HorizontalAlignment="Center">
+                        <FontIcon Glyph="&#xE977;" FontSize="26" />
+                        <TextBlock Text="Upstairs" Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   FontSize="16" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="UpstairsSub" Text=" " Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Button x:Name="DownstairsCard" Grid.Column="1" Click="OnDownstairsClick"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        Padding="12,18" CornerRadius="8" BorderThickness="1"
+                        AutomationProperties.Name="Switch to Downstairs">
+                    <StackPanel Spacing="6" HorizontalAlignment="Center">
+                        <FontIcon Glyph="&#xE7F4;" FontSize="26" />
+                        <TextBlock Text="Downstairs" Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   FontSize="16" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="DownstairsSub" Text=" " Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <!-- Idle hint -->
+            <Border x:Name="HintPanel" CornerRadius="6" Padding="12,9"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                    <FontIcon Glyph="&#xEA18;" FontSize="14"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="Switching requires administrator permission"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Switching progress -->
+            <StackPanel x:Name="ProgressPanel" Spacing="8" Visibility="Collapsed">
+                <ProgressBar x:Name="Progress" Minimum="0" Maximum="100" Value="0" />
+                <TextBlock x:Name="ProgressText" Text=" " Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+
+            <!-- Result of the last switch, or a problem with the current state -->
+            <InfoBar x:Name="ResultBar" IsOpen="False" IsClosable="True" Closed="OnResultClosed">
+                <InfoBar.Content>
+                    <StackPanel x:Name="RecoveryPanel" Spacing="6" Margin="0,0,0,12" Visibility="Collapsed">
+                        <TextBlock Text="Run in a terminal opened as administrator:"
+                                   Style="{StaticResource CaptionTextBlockStyle}" />
+                        <TextBlock x:Name="RecoveryText" FontFamily="Consolas" FontSize="12"
+                                   IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                        <Button Content="Copy commands" Click="OnCopyRecovery" />
+                    </StackPanel>
+                </InfoBar.Content>
+            </InfoBar>
+        </StackPanel>
+    </Grid>
+</Window>

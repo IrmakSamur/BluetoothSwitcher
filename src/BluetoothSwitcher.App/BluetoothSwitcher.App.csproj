@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>BluetoothSwitcher.App</RootNamespace>
+    <AssemblyName>BluetoothSwitcher</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
+    <Platform>x64</Platform>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <!-- Unpackaged: a plain exe, no MSIX. The Windows App SDK ships next to it. -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BluetoothSwitcher.Core\BluetoothSwitcher.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The validated switching engine, copied unchanged next to the exe. -->
+  <ItemGroup>
+    <Content Include="..\..\poc\Switch-Adapter.ps1" Link="Switch-Adapter.ps1" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
