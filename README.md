@@ -16,6 +16,13 @@ Run the read-only status check (no admin rights, changes nothing):
 powershell -NoProfile -ExecutionPolicy Bypass -File .\poc\Get-AdapterStatus.ps1
 ```
 
+Run the tests (no admin rights, no real device is changed; the switching logic runs
+against a simulated `pnputil`):
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-Tests.ps1
+```
+
 ## v1 scope
 
 - Identify both adapters reliably (not by fixed instance ID).

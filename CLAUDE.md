@@ -46,6 +46,10 @@ DualSense button-combo switching, system tray, automatic DualSense reconnection.
 ## Conventions
 
 - PoC scripts live in `poc/` and are PowerShell 5.1 compatible. The app itself is C#.
+- Run `tests/Run-Tests.ps1` after any change to `poc/Switch-Adapter.ps1`. The tests need no
+  elevation and must never touch real device state; add a mocked scenario for each new failure mode.
+- After the first device change, the switch script must not call the WMI-backed PnP cmdlets
+  (`Get-PnpDevice` etc.); poll with `pnputil /enum-devices ... /format xml` instead.
 - The .NET SDK is not installed yet (runtimes only); ask before installing it.
 - The repository is local only for now.
 - Keep it small: prefer OS-provided mechanisms over third-party dependencies.
