@@ -75,6 +75,12 @@ public sealed partial class ElevatedScriptRunner : ISwitchRunner
         _timeout = timeout ?? TimeSpan.FromMinutes(3);
     }
 
+    /// <summary>
+    /// False starts the script without the UAC prompt. Only the tests use this, with a
+    /// harmless stand-in script, to exercise the launch and log-following code.
+    /// </summary>
+    public bool Elevate { get; init; } = true;
+
     public static string PowerShellPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe");
 
@@ -111,9 +117,10 @@ public sealed partial class ElevatedScriptRunner : ISwitchRunner
             FileName = PowerShellPath,
             Arguments = BuildArguments(_scriptPath, target, logPath),
             UseShellExecute = true,   // required for the "runas" verb
-            Verb = "runas",           // Windows shows the UAC prompt
             WindowStyle = ProcessWindowStyle.Hidden,
         };
+        if (Elevate)
+            startInfo.Verb = "runas";   // Windows shows the UAC prompt
 
         // Last point at which cancelling is safe: nothing has been started yet.
         cancellationToken.ThrowIfCancellationRequested();
