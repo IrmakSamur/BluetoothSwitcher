@@ -1,0 +1,29 @@
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editors
+.vs/
+.vscode/
+.idea/
+*.swp
+*.user
+*.suo
+
+# Build output (refine once a stack is chosen)
+bin/
+obj/
+build/
+dist/
+out/
+
+# Logs and temp
+*.log
+*.tmp
+
+# Secrets and local config
+.env
+.env.*
+*.local
+.claude/settings.local.json
