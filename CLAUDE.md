@@ -69,6 +69,8 @@ Windows 11 desktop app for one-click switching between two Bluetooth adapters on
 - `src/BluetoothSwitcher.App/` - WinUI 3 window; keep it thin.
 - `installer/` - `Build-Package.ps1` (no admin), `Install.ps1` and `Uninstall.ps1` (admin).
 - `tests/` - `Run-Tests.ps1` runs everything.
+- `tools/New-AppIcon.ps1` - regenerates `src/BluetoothSwitcher.App/Assets/AppIcon.ico`.
+- `Directory.Build.props` - the version for all projects; change it only for a release.
 - `dist/` - built package; ignored by Git.
 
 ## Workflow
@@ -76,9 +78,18 @@ Windows 11 desktop app for one-click switching between two Bluetooth adapters on
 1. Investigation and stack decision (done).
 2. Switching proof of concept, validated on hardware both ways (done).
 3. WinUI 3 app, first working version (done).
-4. Installer and script verification (done; tested in a throwaway folder only).
-5. Real install by the user, then hardware validation through the installed app, with
-   explicit approval per test (next).
+4. Installer and script verification (done).
+5. Real install and hardware validation through the installed app, both directions and
+   after a reboot (done by the user, 2026-11-11).
+6. Version 1.0.0 with application icon (done).
+
+## Known issue (1.0.0)
+
+- The app's log reader (`LogTail`) can collide with the script's `Add-Content`, which then
+  fails for a few seconds in Windows PowerShell 5.1, so log lines and progress steps go
+  missing. Switching and the reported outcome are unaffected. A fix must not weaken the
+  rule that outcomes come from hardware state; changing the script's logging changes its
+  hash and needs the user's agreement and a reinstall.
 
 ## Conventions
 

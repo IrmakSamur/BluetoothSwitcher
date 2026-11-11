@@ -8,9 +8,19 @@ A lightweight Windows 11 app that switches a PC between two Bluetooth adapters w
 Windows only supports one active Bluetooth adapter at a time, so switching means disabling
 one adapter and enabling the other, then verifying the result.
 
-**Status: switching is validated on real hardware in both directions with the script
-(2026-11-10). The WinUI 3 app and its installer are built and tested without hardware;
-switching through the installed app has not been run on real hardware yet.**
+**Version 1.0.0.** Switching is validated on real hardware in both directions, with the
+script (2026-11-10) and through the installed app, including after a reboot (2026-11-11,
+tested by the owner).
+
+### Known issue in 1.0.0
+
+Lines can go missing from a switch log, and the progress bar can then jump straight to the
+result. Cause: the app reads the log while the script appends to it; when the two collide,
+Windows PowerShell's `Add-Content` fails and keeps failing for a few seconds. Seen once in
+five switches through the installed app (the first after a reboot) and reproduced on a
+temporary file. **Switching is not affected**: the script ignores log-write failures, and the
+app decides the outcome from the real adapter state, not from the log. If the log's last line
+is lost during a *failed* switch, the app's explanation of the failure is less specific.
 
 ## Install, update, uninstall
 
@@ -154,6 +164,8 @@ damaged or incomplete copy; it is not a signature.
 | `src/BluetoothSwitcher.Core` | Adapter detection, state parsing, switch orchestration, script verification. No UI. |
 | `src/BluetoothSwitcher.App` | WinUI 3 window. |
 | `installer/` | `Build-Package.ps1`, `Install.ps1`, `Uninstall.ps1`. |
+| `tools/New-AppIcon.ps1` | Draws the application icon (`src/BluetoothSwitcher.App/Assets/AppIcon.ico`). |
+| `Directory.Build.props` | The version number for all projects. |
 | `tests/` | Mocked PowerShell scenarios, parser tests, and Core unit tests. |
 
 ## Stack
@@ -214,10 +226,9 @@ Recovery if Bluetooth is lost:
 1. Investigation and stack decision. *(done)*
 2. Switching proof of concept, validated on hardware in both directions. *(done)*
 3. WinUI 3 app, first working version. *(done)*
-4. Installer with protected install folder and script verification. *(done, tested in a
-   throwaway folder; the real install has not been run)*
-5. Real install, then hardware validation of switching through the app, with explicit
-   approval per test. *(next)*
+4. Installer with protected install folder and script verification. *(done)*
+5. Real install and hardware validation of switching through the installed app. *(done)*
+6. Version 1.0.0 with application icon. *(done)*
 
 ## Future possibilities
 

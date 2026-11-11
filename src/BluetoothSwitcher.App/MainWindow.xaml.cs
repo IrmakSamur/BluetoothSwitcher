@@ -89,6 +89,11 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
 
+        // Taskbar and Alt+Tab icon. A missing file must not stop the app from starting.
+        var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
+        if (File.Exists(icon))
+            AppWindow.SetIcon(icon);
+
         var titleBar = AppWindow.TitleBar;
         titleBar.ButtonBackgroundColor = Colors.Transparent;
         titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;

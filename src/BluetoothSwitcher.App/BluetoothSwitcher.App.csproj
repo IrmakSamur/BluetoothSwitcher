@@ -7,6 +7,8 @@
     <RootNamespace>BluetoothSwitcher.App</RootNamespace>
     <AssemblyName>BluetoothSwitcher</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Icon of the exe (Explorer, Start menu shortcut). Regenerate with tools\New-AppIcon.ps1. -->
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x64</Platforms>
     <Platform>x64</Platform>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -30,6 +32,11 @@
   <!-- The validated switching engine, copied unchanged next to the exe. -->
   <ItemGroup>
     <Content Include="..\..\poc\Switch-Adapter.ps1" Link="Switch-Adapter.ps1" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Also shipped as a file: the window (title bar and taskbar) loads its icon from it. -->
+  <ItemGroup>
+    <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Embed the script's SHA-256 in the assembly. The app refuses to start any

@@ -1,0 +1,10 @@
+<Project>
+
+  <!-- One version for every project. Change it here for a release. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <Product>BluetoothSwitcher</Product>
+    <Description>Switch between the upstairs and downstairs Bluetooth adapters</Description>
+  </PropertyGroup>
+
+</Project>
