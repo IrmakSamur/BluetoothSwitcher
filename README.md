@@ -8,8 +8,53 @@ A lightweight Windows 11 app that switches a PC between two Bluetooth adapters w
 Windows only supports one active Bluetooth adapter at a time, so switching means disabling
 one adapter and enabling the other, then verifying the result.
 
-**Status: switching is validated on real hardware in both directions (2026-11-10).
-The WinUI 3 app is the current work.**
+**Status: switching is validated on real hardware in both directions with the script
+(2026-11-10). The WinUI 3 app and its installer are built and tested without hardware;
+switching through the installed app has not been run on real hardware yet.**
+
+## Install, update, uninstall
+
+The app must be installed in a protected folder before it will switch adapters, because it
+starts the switch script as administrator (see [Security](#security)).
+
+**1. Build the package** from a normal terminal. No administrator rights; needs the .NET 10 SDK.
+It runs the tests, builds the app, and writes `dist\BluetoothSwitcher`:
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\Build-Package.ps1
+```
+
+**2. Install** from a PowerShell opened **as administrator**. The script refuses to run
+unelevated and never requests elevation itself. Add `-WhatIf` to preview without changing anything:
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\dev\personal\BluetoothSwitcher\installer\Install.ps1"
+```
+
+It copies the package to `C:\Program Files\BluetoothSwitcher`, verifies every file, makes
+Administrators the owner, sets the permissions (SYSTEM and Administrators full control, Users
+read and run, nothing inherited), and creates the all-users Start menu shortcut
+**BluetoothSwitcher**. It does not start the app, touch any Bluetooth device, or add a
+service, scheduled task, registry entry, or auto-start item.
+
+**3. Run** BluetoothSwitcher from the Start menu. The app runs without administrator rights;
+Windows asks for approval once per switch.
+
+**Update:** repeat steps 1 and 2. Close the app first.
+
+**Uninstall** from a PowerShell opened as administrator (add `-RemoveLogs` to also delete the
+switch logs in `%LOCALAPPDATA%\BluetoothSwitcher`). Bluetooth adapters are left as they are:
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\BluetoothSwitcher\Uninstall.ps1"
+```
+
+**Check an installed copy** (no window; exit code 0 means it may switch, 14 means the folder
+is not protected, 13 means the script does not match the app):
+
+```
+"C:\Program Files\BluetoothSwitcher\BluetoothSwitcher.exe" --verify-install
+```
 
 ## Quick commands
 
@@ -38,6 +83,9 @@ src\BluetoothSwitcher.App\bin\x64\Release\net10.0-windows10.0.19041.0\win-x64\Bl
 
 Add `--demo` to run against simulated adapters (nothing real is read or changed). Demo
 variants: `--demo=fail`, `--demo=die`, `--demo=decline`, `--demo=lie`.
+
+A development build shows the real adapters but has switching disabled, because its folder is
+not protected. `--dev` lifts that for development only; the script's hash is still verified.
 
 Manual switch from an elevated PowerShell (dry run unless `-Execute` is given):
 
@@ -81,14 +129,31 @@ BluetoothSwitcher.exe (WinUI 3, NOT elevated)
 - **Unexpected termination.** If the script dies or times out, the app re-reads the adapters
   and shows what is actually true, with recovery commands if no adapter is active.
 
+### Security
+
+The UAC prompt only says "Windows PowerShell", so it cannot show which script is being
+approved. Two checks, made immediately before every prompt, tie the approval to the script
+that was built and installed:
+
+- **Protected location.** The script, its folder, and the parent folder must be owned by, and
+  writable only by, SYSTEM, Administrators or TrustedInstaller. Otherwise the app refuses to
+  switch. This is what stops another program from swapping the script.
+- **SHA-256 match.** The build embeds the hash of `poc/Switch-Adapter.ps1` in the app. A script
+  with any other hash is not started. This catches a mismatched or damaged copy.
+
+PowerShell is started by its full System32 path with `-NoProfile`. There is no background
+service, scheduled task, or stored credential. `package.sha256` in the package only detects a
+damaged or incomplete copy; it is not a signature.
+
 ### Projects
 
 | Path | Purpose |
 |---|---|
 | `poc/Switch-Adapter.ps1` | Switching engine (disable, verify, enable, verify, rollback). |
 | `poc/Get-AdapterStatus.ps1` | Read-only status report. |
-| `src/BluetoothSwitcher.Core` | Adapter detection, state parsing, switch orchestration. No UI. |
+| `src/BluetoothSwitcher.Core` | Adapter detection, state parsing, switch orchestration, script verification. No UI. |
 | `src/BluetoothSwitcher.App` | WinUI 3 window. |
+| `installer/` | `Build-Package.ps1`, `Install.ps1`, `Uninstall.ps1`. |
 | `tests/` | Mocked PowerShell scenarios, parser tests, and Core unit tests. |
 
 ## Stack
@@ -148,9 +213,11 @@ Recovery if Bluetooth is lost:
 
 1. Investigation and stack decision. *(done)*
 2. Switching proof of concept, validated on hardware in both directions. *(done)*
-3. WinUI 3 app, first working version. *(in progress)*
-4. Hardware validation of switching through the app, with explicit approval per test.
-5. Packaging.
+3. WinUI 3 app, first working version. *(done)*
+4. Installer with protected install folder and script verification. *(done, tested in a
+   throwaway folder; the real install has not been run)*
+5. Real install, then hardware validation of switching through the app, with explicit
+   approval per test. *(next)*
 
 ## Future possibilities
 

@@ -32,4 +32,15 @@
     <Content Include="..\..\poc\Switch-Adapter.ps1" Link="Switch-Adapter.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Embed the script's SHA-256 in the assembly. The app refuses to start any
+       script elevated whose hash differs (see Engine in App.xaml.cs). -->
+  <Target Name="EmbedSwitchScriptHash" BeforeTargets="GetAssemblyAttributes">
+    <GetFileHash Files="..\..\poc\Switch-Adapter.ps1" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Hash" PropertyName="SwitchScriptSha256" />
+    </GetFileHash>
+    <ItemGroup>
+      <AssemblyMetadata Include="SwitchScriptSha256" Value="$(SwitchScriptSha256)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

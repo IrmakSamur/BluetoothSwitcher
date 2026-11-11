@@ -26,7 +26,7 @@
                         Background="{ThemeResource SystemFillColorAttentionBackgroundBrush}"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                         CornerRadius="4" Padding="6,1">
-                    <TextBlock Text="Demo" Style="{StaticResource CaptionTextBlockStyle}" />
+                    <TextBlock x:Name="DemoBadgeText" Text="Demo" Style="{StaticResource CaptionTextBlockStyle}" />
                 </Border>
             </StackPanel>
         </Grid>
@@ -90,9 +90,9 @@
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                    <FontIcon Glyph="&#xEA18;" FontSize="14"
+                    <FontIcon x:Name="HintIcon" Glyph="&#xEA18;" FontSize="14"
                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <TextBlock Text="Switching requires administrator permission"
+                    <TextBlock x:Name="HintText" Text="Switching requires administrator permission"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>

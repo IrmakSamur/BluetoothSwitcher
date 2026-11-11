@@ -81,6 +81,9 @@ public sealed partial class ElevatedScriptRunner : ISwitchRunner
     /// </summary>
     public bool Elevate { get; init; } = true;
 
+    /// <summary>Checks the script must pass immediately before every launch.</summary>
+    public EnginePolicy Policy { get; init; } = EnginePolicy.None;
+
     public static string PowerShellPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe");
 
@@ -124,6 +127,11 @@ public sealed partial class ElevatedScriptRunner : ISwitchRunner
 
         // Last point at which cancelling is safe: nothing has been started yet.
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Verify the script as late as possible, right before asking for elevation.
+        var verdict = EngineGuard.Check(_scriptPath, Policy);
+        if (!verdict.IsOk)
+            return Failed(verdict.Message);
 
         Process? process;
         try

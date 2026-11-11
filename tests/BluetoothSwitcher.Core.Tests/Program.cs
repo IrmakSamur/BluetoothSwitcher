@@ -295,6 +295,66 @@ await Test("orchestrator", async () =>
     Check("unreadable state: kind", r.Kind, SwitchResultKind.StateUnknown);
 });
 
+// ---------------------------------------------------------------- script verification before elevation
+// Read-only: hashes a temp file and reads the permissions of existing system folders.
+
+await Test("engine guard", async () =>
+{
+    var work = Directory.CreateTempSubdirectory("bts-guard-").FullName;
+    var script = Path.Combine(work, "Switch-Adapter.ps1");
+    File.WriteAllText(script, "'original'");
+    var hash = EngineGuard.Sha256(script);
+
+    Check("hash is 64 hex characters", hash.Length, 64);
+    Check("matching hash: ok", EngineGuard.Check(script, new(true, hash, false)).Result, EngineCheck.Ok);
+    Check("matching hash, lower case: ok", EngineGuard.Check(script, new(true, hash.ToLowerInvariant(), false)).Result, EngineCheck.Ok);
+    Check("no expected hash: refused", EngineGuard.Check(script, new(true, null, false)).Result, EngineCheck.HashUnknown);
+    Check("empty expected hash: refused", EngineGuard.Check(script, new(true, " ", false)).Result, EngineCheck.HashUnknown);
+    Check("missing script: refused", EngineGuard.Check(Path.Combine(work, "nope.ps1"), new(true, hash, false)).Result, EngineCheck.Missing);
+
+    File.WriteAllText(script, "'tampered'");
+    Check("changed script: hash mismatch", EngineGuard.Check(script, new(true, hash, false)).Result, EngineCheck.HashMismatch);
+    File.AppendAllText(script, " ");
+    Check("one added byte: hash mismatch", EngineGuard.Check(script, new(true, hash, false)).Result, EngineCheck.HashMismatch);
+
+    // Location: a temp folder is writable by the user; Windows folders are not.
+    var current = EngineGuard.Sha256(script);
+    Check("user-writable folder: refused", EngineGuard.Check(script, new(true, current, true)).Result, EngineCheck.Unprotected);
+    Check("user-writable folder is allowed when the policy says so",
+        EngineGuard.Check(script, new(true, current, false)).Result, EngineCheck.Ok);
+    Check("temp folder is reported unprotected", EngineGuard.WhyUnprotected(new DirectoryInfo(work)) is not null, true);
+
+    var system32 = Environment.GetFolderPath(Environment.SpecialFolder.System);
+    var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+    Check("System32 folder is protected", EngineGuard.WhyUnprotected(new DirectoryInfo(system32)), null);
+    Check("a System32 file is protected", EngineGuard.WhyUnprotected(new FileInfo(Path.Combine(system32, "pnputil.exe"))), null);
+    Check("Program Files folder is protected", EngineGuard.WhyUnprotected(new DirectoryInfo(programFiles)), null);
+    Check("a protected, matching file passes the full policy",
+        EngineGuard.Check(Path.Combine(system32, "pnputil.exe"),
+            new(true, EngineGuard.Sha256(Path.Combine(system32, "pnputil.exe")), true)).Result, EngineCheck.Ok);
+
+    // The runner must refuse before starting anything.
+    var logs = Path.Combine(work, "logs");
+    var engine = FakeEngine("ok", work);
+    var refused = await new ElevatedScriptRunner(engine, logs) { Elevate = false, Policy = new(true, hash, false) }
+        .RunAsync(AdapterRole.Internal, null, CancellationToken.None);
+    Check("runner with wrong hash: not started", refused.Status, ScriptRunStatus.StartFailed);
+    Check("runner with wrong hash: no log was written", Directory.GetFiles(logs).Length, 0);
+
+    refused = await new ElevatedScriptRunner(engine, logs) { Elevate = false, Policy = new(true, EngineGuard.Sha256(engine), true) }
+        .RunAsync(AdapterRole.Internal, null, CancellationToken.None);
+    Check("runner in unprotected folder: not started", refused.Status, ScriptRunStatus.StartFailed);
+    Check("runner in unprotected folder: no log was written", Directory.GetFiles(logs).Length, 0);
+
+    var hw = new SimulatedHardware { Speed = 0 };
+    var result = await new SwitchOrchestrator(hw, new ElevatedScriptRunner(engine, logs) { Elevate = false, Policy = new(true, hash, false) })
+        .SwitchAsync(AdapterRole.Internal, null);
+    Check("orchestrator with wrong hash: refused", result.Kind, SwitchResultKind.Refused);
+    Check("orchestrator with wrong hash: says why", result.Detail.Contains("does not match this build"), true);
+
+    try { Directory.Delete(work, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+});
+
 // ---------------------------------------------------------------- launch path, with real processes
 // Starts real powershell.exe processes through the same code the app uses, but without
 // the UAC prompt and with the harmless stand-in engine. No device is touched.

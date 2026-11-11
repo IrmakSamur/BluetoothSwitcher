@@ -41,9 +41,26 @@ public sealed partial class MainWindow : Window
         else
         {
             _reader = new PnpUtilStateReader();
-            var script = Path.Combine(AppContext.BaseDirectory, "Switch-Adapter.ps1");
-            _orchestrator = new SwitchOrchestrator(
-                _reader, new ElevatedScriptRunner(script, ElevatedScriptRunner.DefaultLogDirectory));
+            var policy = Engine.Policy(allowUnprotected: options.Dev);
+            _orchestrator = new SwitchOrchestrator(_reader,
+                new ElevatedScriptRunner(Engine.ScriptPath, ElevatedScriptRunner.DefaultLogDirectory) { Policy = policy });
+
+            // The same check runs again right before every switch; this one only
+            // tells the user up front.
+            var verdict = EngineGuard.Check(Engine.ScriptPath, policy);
+            if (!verdict.IsOk)
+            {
+                HintIcon.Glyph = "";
+                HintText.Text = verdict.Result == EngineCheck.Unprotected
+                    ? "Switching is disabled: not installed in a protected folder"
+                    : "Switching is disabled: the switch script could not be verified";
+                ToolTipService.SetToolTip(HintPanel, verdict.Message);
+            }
+            if (options.Dev)
+            {
+                DemoBadgeText.Text = "Dev";
+                DemoBadge.Visibility = Visibility.Visible;
+            }
         }
 
         ConfigureWindow();

@@ -30,7 +30,7 @@ function Get-DeviceSnapshot { (& $pnputil /enum-devices /class Bluetooth /connec
 $before = if ($SkipLive) { $null } else { Get-DeviceSnapshot }
 
 '=== 1. syntax ==='
-foreach ($file in Get-ChildItem -Path (Join-Path $root 'poc'), $PSScriptRoot -Filter *.ps1 -Recurse) {
+foreach ($file in Get-ChildItem -Path (Join-Path $root 'poc'), (Join-Path $root 'installer'), $PSScriptRoot -Filter *.ps1 -Recurse) {
     $errors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$errors)
     if ($errors.Count) { $failures++ }

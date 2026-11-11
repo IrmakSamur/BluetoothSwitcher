@@ -45,22 +45,40 @@ Windows 11 desktop app for one-click switching between two Bluetooth adapters on
   starts. Block closing the window during a switch.
 - After the first device change, the script must not call the WMI-backed PnP cmdlets
   (`Get-PnpDevice` etc.); it polls with `pnputil`.
-- v1 has no system tray, background service, or controller reconnection.
+- **Before every elevation the app verifies the script** (`EngineGuard`): its folder must be
+  writable by administrators only, and its SHA-256 must equal the hash the build embedded.
+  Never weaken or bypass this. `--dev` lifts only the location check, for development builds.
+- v1 has no system tray, background service, scheduled task, or controller reconnection.
+
+## Install rules
+
+- The app is installed to `C:\Program Files\BluetoothSwitcher` by `installer/Install.ps1`,
+  run by the user from an elevated PowerShell. Never run the real install or uninstall
+  yourself; test with `-WhatIf`, or with `-TestInstall` into a throwaway folder.
+- Install and uninstall scripts never request elevation themselves and never touch devices.
+- The package is the Release **build** output. Do not switch `Build-Package.ps1` to
+  `dotnet publish`: it omits `BluetoothSwitcher.pri` and the `.xbf` files and the app then
+  crashes at startup.
+- After changing `poc/Switch-Adapter.ps1` the app must be rebuilt and reinstalled, because the
+  embedded hash changes.
 
 ## Layout
 
 - `poc/` - PowerShell engine and status script (PowerShell 5.1 compatible).
 - `src/BluetoothSwitcher.Core/` - detection, state parsing, switch orchestration; no UI, unit-testable.
 - `src/BluetoothSwitcher.App/` - WinUI 3 window; keep it thin.
+- `installer/` - `Build-Package.ps1` (no admin), `Install.ps1` and `Uninstall.ps1` (admin).
 - `tests/` - `Run-Tests.ps1` runs everything.
+- `dist/` - built package; ignored by Git.
 
 ## Workflow
 
 1. Investigation and stack decision (done).
 2. Switching proof of concept, validated on hardware both ways (done).
-3. WinUI 3 app, first working version (in progress).
-4. Hardware validation through the app, with explicit approval per test.
-5. Packaging.
+3. WinUI 3 app, first working version (done).
+4. Installer and script verification (done; tested in a throwaway folder only).
+5. Real install by the user, then hardware validation through the installed app, with
+   explicit approval per test (next).
 
 ## Conventions
 

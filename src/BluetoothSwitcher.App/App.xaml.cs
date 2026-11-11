@@ -1,3 +1,4 @@
+using System.Reflection;
 using BluetoothSwitcher.Core;
 using Microsoft.UI.Xaml;
 
@@ -9,28 +10,61 @@ public partial class App : Application
 
     public App()
     {
+        var options = AppOptions.Parse(Environment.GetCommandLineArgs().Skip(1));
+        if (options.VerifyInstall)
+        {
+            // No window: report through the exit code whether this copy may switch.
+            // 0 = verified, otherwise 10 + EngineCheck (11 missing, 12 hash unknown,
+            // 13 hash mismatch, 14 unprotected folder).
+            var verdict = EngineGuard.Check(Engine.ScriptPath, Engine.Policy(allowUnprotected: false));
+            Environment.Exit(verdict.IsOk ? 0 : 10 + (int)verdict.Result);
+        }
+
+        Options = options;
         InitializeComponent();
     }
 
+    public AppOptions Options { get; }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _window = new MainWindow(AppOptions.Parse(Environment.GetCommandLineArgs().Skip(1)));
+        _window = new MainWindow(Options);
         _window.Activate();
     }
 }
 
+/// <summary>Where the switch script is and what it must satisfy before it is run elevated.</summary>
+public static class Engine
+{
+    public static string ScriptPath => Path.Combine(AppContext.BaseDirectory, "Switch-Adapter.ps1");
+
+    /// <summary>SHA-256 of poc/Switch-Adapter.ps1, embedded by the build (see the .csproj).</summary>
+    public static string? ExpectedSha256 => typeof(Engine).Assembly
+        .GetCustomAttributes<AssemblyMetadataAttribute>()
+        .FirstOrDefault(a => a.Key == "SwitchScriptSha256")?.Value;
+
+    public static EnginePolicy Policy(bool allowUnprotected) =>
+        new(VerifyHash: true, ExpectedSha256, RequireProtectedLocation: !allowUnprotected);
+}
+
 /// <summary>
 /// Command-line options.
-///   (none)                 real adapters; switching starts the elevated script.
+///   (none)                 real adapters; switching starts the elevated script, but only
+///                          from a protected install folder.
+///   --dev                  allow switching from an unprotected folder (development builds).
+///                          The script's hash is still verified.
+///   --verify-install       no window; exit code says whether this copy may switch.
 ///   --demo[=mode]          simulated adapters, no real device is read or changed.
 ///                          mode: normal (default), fail, die, decline, lie.
 ///   --demo-auto=Upstairs   in demo mode only: start one switch automatically.
 /// </summary>
-public sealed record AppOptions(bool Demo, SimulationMode DemoMode, AdapterRole? DemoAutoTarget)
+public sealed record AppOptions(bool Demo, SimulationMode DemoMode, AdapterRole? DemoAutoTarget, bool Dev, bool VerifyInstall)
 {
     public static AppOptions Parse(IEnumerable<string> args)
     {
         var demo = false;
+        var dev = false;
+        var verify = false;
         var mode = SimulationMode.Normal;
         AdapterRole? auto = null;
 
@@ -39,6 +73,14 @@ public sealed record AppOptions(bool Demo, SimulationMode DemoMode, AdapterRole?
             if (arg.Equals("--demo", StringComparison.OrdinalIgnoreCase))
             {
                 demo = true;
+            }
+            else if (arg.Equals("--dev", StringComparison.OrdinalIgnoreCase))
+            {
+                dev = true;
+            }
+            else if (arg.Equals("--verify-install", StringComparison.OrdinalIgnoreCase))
+            {
+                verify = true;
             }
             else if (arg.StartsWith("--demo=", StringComparison.OrdinalIgnoreCase))
             {
@@ -61,6 +103,6 @@ public sealed record AppOptions(bool Demo, SimulationMode DemoMode, AdapterRole?
         }
 
         // An automatic switch is only ever allowed against simulated hardware.
-        return new AppOptions(demo, mode, demo ? auto : null);
+        return new AppOptions(demo, mode, demo ? auto : null, dev, verify);
     }
 }
