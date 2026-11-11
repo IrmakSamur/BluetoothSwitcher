@@ -64,7 +64,7 @@ public sealed class SimulatedHardware : IDeviceStateReader, ISwitchRunner
         }
     }
 
-    public async Task<ScriptRunResult> RunAsync(AdapterRole target, IProgress<string>? logLine, CancellationToken cancellationToken)
+    public async Task<ScriptRunResult> RunAsync(AdapterRole target, Action<int>? onStarted, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         RunCount++;
@@ -74,7 +74,6 @@ public sealed class SimulatedHardware : IDeviceStateReader, ISwitchRunner
         {
             var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level,-5}] {message}";
             lines.Add(line);
-            logLine?.Report(line);
         }
         Task Wait(int milliseconds) => Task.Delay(TimeSpan.FromMilliseconds(milliseconds * Speed), CancellationToken.None);
         void SetStatus(AdapterRole role, string status)
@@ -95,6 +94,7 @@ public sealed class SimulatedHardware : IDeviceStateReader, ISwitchRunner
         if (Mode == SimulationMode.DeclineApproval)
             return new(ScriptRunStatus.Declined, null, null, null, [], null);
 
+        onStarted?.Invoke(0);
         var source = AdapterCatalog.Other(target);
         Log("INFO", $"BluetoothSwitcher switch PoC. Mode: SIMULATION. Requested target: {AdapterCatalog.Location(target)}.");
         await Wait(1600); // adapter detection

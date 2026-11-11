@@ -45,15 +45,19 @@ public sealed record ScriptRunResult(
 /// <summary>Runs the switching engine for one target. May change device state.</summary>
 public interface ISwitchRunner
 {
+    /// <param name="onStarted">
+    /// Called once when the engine process has started (the UAC prompt was accepted),
+    /// with its process ID, or 0 if that is not known.
+    /// </param>
     /// <param name="cancellationToken">
     /// Honoured only until the script has been started. A running script is never stopped.
     /// </param>
-    Task<ScriptRunResult> RunAsync(AdapterRole target, IProgress<string>? logLine, CancellationToken cancellationToken);
+    Task<ScriptRunResult> RunAsync(AdapterRole target, Action<int>? onStarted, CancellationToken cancellationToken);
 }
 
 /// <summary>
-/// Starts poc/Switch-Adapter.ps1 elevated (one UAC prompt) and follows its log file.
-/// The calling process itself stays unelevated.
+/// Starts poc/Switch-Adapter.ps1 elevated (one UAC prompt), waits for it to exit, and
+/// then reads its log file. The calling process itself stays unelevated.
 /// </summary>
 public sealed partial class ElevatedScriptRunner : ISwitchRunner
 {
@@ -99,7 +103,7 @@ public sealed partial class ElevatedScriptRunner : ISwitchRunner
                $"-File \"{scriptPath}\" -Target {AdapterCatalog.Location(target)} -Execute -LogPath \"{logPath}\"";
     }
 
-    public async Task<ScriptRunResult> RunAsync(AdapterRole target, IProgress<string>? logLine, CancellationToken cancellationToken)
+    public async Task<ScriptRunResult> RunAsync(AdapterRole target, Action<int>? onStarted, CancellationToken cancellationToken)
     {
         if (!File.Exists(_scriptPath))
             return Failed($"Switch script not found: {_scriptPath}");
@@ -155,34 +159,28 @@ public sealed partial class ElevatedScriptRunner : ISwitchRunner
         // the cancellation token is deliberately ignored.
         using (process)
         {
-            var tail = new LogTail(logPath);
-            var lines = new List<string>();
+            var processId = 0;
+            try { processId = process.Id; }
+            catch (Exception ex) when (ex is InvalidOperationException or Win32Exception) { }
+            onStarted?.Invoke(processId);
+
+            // The log file is NOT opened while the script runs. Windows PowerShell's
+            // Add-Content fails when a reader has the file open, and then keeps failing
+            // for seconds, so following the log made the script lose its own log lines.
             var clock = Stopwatch.StartNew();
-
-            void Pump()
-            {
-                foreach (var line in tail.ReadNewLines())
-                {
-                    lines.Add(line);
-                    logLine?.Report(line);
-                }
-            }
-
             while (!process.HasExited)
             {
                 if (clock.Elapsed > _timeout)
                 {
-                    Pump();
-                    return new ScriptRunResult(ScriptRunStatus.TimedOut, null, ParseLoggedExitCode(lines), logPath, lines,
-                        $"The switch script was still running after {_timeout.TotalSeconds:0} seconds. It was left running.");
+                    return new ScriptRunResult(ScriptRunStatus.TimedOut, null, null, logPath, [],
+                        $"The switch script was still running after {_timeout.TotalSeconds:0} seconds. " +
+                        "It was left running and its log was not read, so as not to disturb it.");
                 }
-                Pump();
                 await Task.Delay(PollInterval, CancellationToken.None).ConfigureAwait(false);
             }
 
-            // Give the last log lines a moment to reach the disk, then read them.
-            await Task.Delay(PollInterval, CancellationToken.None).ConfigureAwait(false);
-            Pump();
+            // The writer has exited, so reading is safe now.
+            var lines = await ReadFinishedLogAsync(logPath).ConfigureAwait(false);
 
             int? processExitCode = null;
             try { processExitCode = process.ExitCode; }
@@ -190,6 +188,19 @@ public sealed partial class ElevatedScriptRunner : ISwitchRunner
 
             return new ScriptRunResult(ScriptRunStatus.Exited, processExitCode, ParseLoggedExitCode(lines), logPath, lines, null);
         }
+    }
+
+    /// <summary>Reads the whole log of a script that has exited, retrying briefly if it is not there yet.</summary>
+    private static async Task<IReadOnlyList<string>> ReadFinishedLogAsync(string logPath)
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var lines = new LogTail(logPath).ReadNewLines();
+            if (lines.Count > 0)
+                return lines;
+            await Task.Delay(PollInterval, CancellationToken.None).ConfigureAwait(false);
+        }
+        return [];
     }
 
     /// <summary>Reads the script's final "Exit code: N." line, if it wrote one.</summary>

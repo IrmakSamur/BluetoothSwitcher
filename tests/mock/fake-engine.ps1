@@ -11,6 +11,7 @@
       engine-ok.ps1     logs the four steps, "Exit code: 0.", exits 0
       engine-fail.ps1   logs a failure and rollback, "Exit code: 2.", exits 2
       engine-die.ps1    logs two steps, then exits 77 WITHOUT the final log line
+      engine-chatty.ps1 logs 200 lines quickly, then finishes normally
       engine-slow.ps1   logs its process ID, waits 20 s, then finishes normally
       engine-late.ps1   waits 4 s, then finishes normally (outlives a short timeout)
 #>
@@ -40,6 +41,7 @@ switch ($mode) {
         Log 'INFO' 'Step 2/4: wait (simulated).'
         [Environment]::Exit(77)
     }
+    'chatty' { foreach ($i in 1..200) { Log 'INFO' "chatty line $i"; Start-Sleep -Milliseconds 10 } }
     'slow' { Log 'INFO' 'Step 1/4: disable (simulated).'; Start-Sleep -Seconds 20 }
     'late' { Log 'INFO' 'Step 1/4: disable (simulated).'; Start-Sleep -Seconds 4 }
 }

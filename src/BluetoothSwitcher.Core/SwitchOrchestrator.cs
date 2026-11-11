@@ -65,6 +65,9 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
 
     public TimeSpan VerifyInterval { get; init; } = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>How often the adapters are read for the progress display while the engine runs.</summary>
+    public TimeSpan ProgressInterval { get; init; } = TimeSpan.FromMilliseconds(400);
+
     public async Task<SwitchResult> SwitchAsync(
         AdapterRole target, IProgress<SwitchProgress>? progress, CancellationToken cancellationToken = default)
     {
@@ -94,23 +97,50 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
                 before, null, RecoveryCommands(before, target));
 
         // 2. Run the engine. One UAC prompt; declining it is the only way to cancel.
-        progress?.Report(new(SwitchPhase.WaitingForApproval, "Waiting for administrator approval"));
-        var sawLog = false;
-        var lineProgress = new InlineProgress<string>(line =>
+        //    Progress comes from the adapters themselves, read with the same read-only
+        //    query as everywhere else. The engine's log is not touched while it runs.
+        var gate = new object();
+        SwitchPhase? lastPhase = null;
+        void Publish(SwitchPhase phase)
         {
-            if (!sawLog)
+            lock (gate)
             {
-                sawLog = true;
-                progress?.Report(new(SwitchPhase.Starting, "Starting"));
+                if (lastPhase == phase)
+                    return;
+                lastPhase = phase;
+                progress?.Report(new(phase, Describe(phase, originalName, targetName)));
             }
-            if (PhaseFor(line, originalName, targetName) is { } update)
-                progress?.Report(update);
-        });
+        }
+
+        Publish(SwitchPhase.WaitingForApproval);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tracker = new SwitchProgressTracker(target);
 
         ScriptRunResult run;
         try
         {
-            run = await runner.RunAsync(target, lineProgress, cancellationToken).ConfigureAwait(false);
+            var runTask = runner.RunAsync(target, _ =>
+            {
+                Publish(SwitchPhase.Starting);
+                started.TrySetResult();
+            }, cancellationToken);
+
+            while (await Task.WhenAny(runTask, Task.Delay(ProgressInterval, CancellationToken.None)).ConfigureAwait(false) != runTask)
+            {
+                if (!started.Task.IsCompleted)
+                    continue;   // still at the UAC prompt: nothing can have changed yet
+                try
+                {
+                    var now = await reader.ReadAsync(CancellationToken.None).ConfigureAwait(false);
+                    if (tracker.Next(now) is { } phase)
+                        Publish(phase);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A failed progress read only means the display is not updated.
+                }
+            }
+            run = await runTask.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -123,7 +153,7 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
                 "Nothing was changed. " + run.Error, before, run, []);
 
         // 3. Verify against real hardware state, whatever the engine reported.
-        progress?.Report(new(SwitchPhase.Verifying, "Verifying adapter state"));
+        Publish(SwitchPhase.Verifying);
         BluetoothSnapshot after;
         try
         {
@@ -196,20 +226,18 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
         throw lastError ?? new InvalidOperationException("Adapter state could not be read.");
     }
 
-    private static SwitchProgress? PhaseFor(string line, string originalName, string targetName)
+    private static string Describe(SwitchPhase phase, string originalName, string targetName) => phase switch
     {
-        if (line.Contains("ROLLBACK", StringComparison.Ordinal))
-            return new(SwitchPhase.RollingBack, $"Switch failed, restoring {originalName}");
-        if (line.Contains("Step 1/4", StringComparison.Ordinal))
-            return new(SwitchPhase.DisablingCurrent, $"Turning off {originalName}");
-        if (line.Contains("Step 2/4", StringComparison.Ordinal))
-            return new(SwitchPhase.WaitingForStop, $"Waiting for {originalName} to stop");
-        if (line.Contains("Step 3/4", StringComparison.Ordinal))
-            return new(SwitchPhase.EnablingTarget, $"Turning on {targetName}");
-        if (line.Contains("Step 4/4", StringComparison.Ordinal))
-            return new(SwitchPhase.WaitingForStart, $"Waiting for {targetName} to start");
-        return null;
-    }
+        SwitchPhase.Checking => "Checking adapters",
+        SwitchPhase.WaitingForApproval => "Waiting for administrator approval",
+        SwitchPhase.Starting => "Starting",
+        SwitchPhase.DisablingCurrent => $"Turning off {originalName}",
+        SwitchPhase.WaitingForStop => $"Waiting for {originalName} to stop",
+        SwitchPhase.EnablingTarget => $"Turning on {targetName}",
+        SwitchPhase.WaitingForStart => $"Waiting for {targetName} to start",
+        SwitchPhase.RollingBack => $"Switch failed, restoring {originalName}",
+        _ => "Verifying adapter state",
+    };
 
     private static string Explain(ScriptRunResult run)
     {
@@ -258,9 +286,49 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
         return commands;
     }
 
-    /// <summary>Reports on the calling thread, so log lines are handled in order.</summary>
-    private sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
+}
+
+/// <summary>
+/// Works out which step a running switch is in from successive adapter readings.
+/// This only drives the progress display; the outcome is decided separately, after
+/// the engine has exited.
+/// </summary>
+public sealed class SwitchProgressTracker(AdapterRole target)
+{
+    private readonly AdapterRole _original = AdapterCatalog.Other(target);
+    private bool _originalWentDown;
+    private bool _targetCameUp;
+
+    /// <summary>Returns the phase the reading indicates, or null if it says nothing new.</summary>
+    public SwitchPhase? Next(BluetoothSnapshot snapshot)
     {
-        public void Report(T value) => handler(value);
+        var original = snapshot.Get(_original);
+        var wanted = snapshot.Get(target);
+        if (original is null || wanted is null)
+            return null;
+
+        if (original.IsDisabled) _originalWentDown = true;
+        if (!wanted.IsDisabled) _targetCameUp = true;
+
+        if (snapshot.IsCleanlyOn(target))
+            return SwitchPhase.Verifying;
+
+        if (snapshot.IsCleanlyOn(_original))
+            // Unchanged so far (the engine is still preparing), or changed and back again.
+            return _originalWentDown ? SwitchPhase.RollingBack : null;
+
+        if (original.IsDisabled && wanted.IsDisabled)
+            // Normal gap between "old one off" and "new one on", unless the new one
+            // had already been turned on: then the engine is undoing the switch.
+            return _targetCameUp ? SwitchPhase.RollingBack : SwitchPhase.EnablingTarget;
+
+        if (original.IsDisabled)
+            return SwitchPhase.WaitingForStart;   // target enabled, not fully up yet
+
+        if (!wanted.IsDisabled)
+            return null;                          // both enabled: not a step of a normal switch
+
+        // The original is enabled but not cleanly active: stopping, or coming back.
+        return _originalWentDown ? SwitchPhase.RollingBack : SwitchPhase.DisablingCurrent;
     }
 }

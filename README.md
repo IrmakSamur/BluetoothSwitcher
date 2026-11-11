@@ -12,15 +12,9 @@ one adapter and enabling the other, then verifying the result.
 script (2026-11-10) and through the installed app, including after a reboot (2026-11-11,
 tested by the owner).
 
-### Known issue in 1.0.0
-
-Lines can go missing from a switch log, and the progress bar can then jump straight to the
-result. Cause: the app reads the log while the script appends to it; when the two collide,
-Windows PowerShell's `Add-Content` fails and keeps failing for a few seconds. Seen once in
-five switches through the installed app (the first after a reboot) and reproduced on a
-temporary file. **Switching is not affected**: the script ignores log-write failures, and the
-app decides the outcome from the real adapter state, not from the log. If the log's last line
-is lost during a *failed* switch, the app's explanation of the failure is less specific.
+The build after the last hardware test changed how the app shows progress (see "Lost log
+lines" under History of failures). The switching script is unchanged, but switching through
+that build has only been tested against simulated adapters.
 
 ## Install, update, uninstall
 
@@ -127,7 +121,10 @@ BluetoothSwitcher.exe (WinUI 3, NOT elevated)
 
 - **The UI never runs elevated.** It only reads device state.
 - **The switching engine is the validated PowerShell script**, unchanged. The app starts it
-  elevated, follows its log file for progress, and waits for it to exit.
+  elevated and waits for it to exit.
+- **Progress comes from the adapters.** While the script runs, the app repeats its read-only
+  status query and shows which step the adapters are in. It does not open the script's log
+  until the script has exited; the log is then read once, to explain a failure.
 - **Success is decided by hardware state, not by the script.** After the script exits, the app
   re-reads the adapters. It reports success only if the target is started with a Bluetooth
   enumerator running and the other adapter is disabled. The script's exit code and log are
@@ -202,6 +199,13 @@ Earlier evaluation of other options: PowerShell-only UI (weak error handling), C
   stop while a WMI-backed cmdlet was polling right after the disable. Rollback did not run and
   both adapters were left disabled. Fixed by polling with `pnputil` and running rollback from
   `finally`. The exact trigger was never reproduced; it has not recurred.
+- **Lost log lines.** The app originally followed the script's log file for progress. When its
+  reads collided with the script's `Add-Content`, Windows PowerShell failed to append and kept
+  failing for a few seconds, so the script lost its own log lines and the progress bar jumped
+  to the result. Seen once in five switches through the installed app, and reproduced on a
+  temporary file. Switching was never affected: the script ignores log-write failures and the
+  app decides the outcome from adapter state. Fixed by not opening the log while the script
+  runs and deriving progress from adapter state instead.
 - DualSense "mutual authentication failed" events are a pairing limitation: the controller
   remembers one host and each adapter has its own address. Not a switching bug; out of scope.
 

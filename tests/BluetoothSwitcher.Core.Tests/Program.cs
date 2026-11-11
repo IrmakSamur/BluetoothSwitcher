@@ -71,13 +71,14 @@ if (args.Contains("--uac-check"))
 
     Console.WriteLine();
     Console.WriteLine("Run 2 of 2: a UAC prompt will appear. Click YES.");
-    var live = new List<string>();
-    var accepted = await runner.RunAsync(AdapterRole.Internal, new Recorder<string>(live), CancellationToken.None);
+    var startedPid = -1;
+    var accepted = await runner.RunAsync(AdapterRole.Internal, pid => startedPid = pid, CancellationToken.None);
     Check("accepted: status", accepted.Status, ScriptRunStatus.Exited);
+    Check("accepted: the start was signalled with a process id", startedPid > 0, true);
     Check("accepted: script really ran elevated", accepted.LogLines.Any(l => l.Contains("Elevated: True.")), true);
     Check("accepted: exit code read from the elevated process", accepted.ProcessExitCode, 0);
     Check("accepted: exit code read from the log", accepted.LoggedExitCode, 0);
-    Check("accepted: log lines were followed live", live.Count == accepted.LogLines.Count && live.Count >= 8, true);
+    Check("accepted: the whole log was read after exit", accepted.LogLines.Count >= 8, true);
     Check("accepted: all four steps were seen", accepted.LogLines.Count(l => l.Contains("Step ")), 4);
     Check("accepted: not flagged as an unexpected end", accepted.EndedUnexpectedly, false);
     Console.WriteLine();
@@ -229,8 +230,10 @@ await Test("orchestrator", async () =>
     var r = await o.SwitchAsync(AdapterRole.Internal, new Recorder(phases));
     Check("normal: kind", r.Kind, SwitchResultKind.Switched);
     Check("normal: hardware really is on the target", (await hw.ReadAsync()).Active, AdapterRole.Internal);
-    Check("normal: phases in order", string.Join(",", phases),
-        "Checking,WaitingForApproval,Starting,DisablingCurrent,WaitingForStop,EnablingTarget,WaitingForStart,Verifying");
+    // The simulation runs instantly here, so only the fixed phases are certain.
+    Check("normal: opening phases", string.Join(",", phases.Take(3)), "Checking,WaitingForApproval,Starting");
+    Check("normal: last phase", phases[^1], SwitchPhase.Verifying);
+    Check("normal: no phase is reported twice in a row", phases.Zip(phases.Skip(1)).Any(p => p.First == p.Second), false);
 
     r = await o.SwitchAsync(AdapterRole.External, null);
     Check("switch back: kind", r.Kind, SwitchResultKind.Switched);
@@ -251,7 +254,6 @@ await Test("orchestrator", async () =>
     phases.Clear();
     r = await o.SwitchAsync(AdapterRole.Internal, new Recorder(phases));
     Check("rollback: kind", r.Kind, SwitchResultKind.StillOnOriginal);
-    Check("rollback: rolling-back phase was reported", phases.Contains(SwitchPhase.RollingBack), true);
     Check("rollback: detail names the script error", r.Detail.Contains("did not start"), true);
     Check("rollback: no recovery commands needed", r.RecoveryCommands.Count, 0);
 
@@ -293,6 +295,69 @@ await Test("orchestrator", async () =>
     var broken = new SwitchOrchestrator(new ThrowingReader(), hw);
     r = await broken.SwitchAsync(AdapterRole.Internal, null);
     Check("unreadable state: kind", r.Kind, SwitchResultKind.StateUnknown);
+});
+
+// ---------------------------------------------------------------- progress from adapter state
+
+await Test("progress tracker", async () =>
+{
+    // Target = internal (Upstairs); original = external (Downstairs).
+    var originalActive  = Snap((Brb, "Started"), (Int, "Disabled"), (Ext, "Started"));
+    var originalStopping = Snap((Int, "Disabled"), (Ext, "Started"));
+    var bothOff         = Snap((Int, "Disabled"), (Ext, "Disabled"));
+    var targetStarting  = Snap((Int, "Started"), (Ext, "Disabled"));
+    var targetProblem   = Snap((Int, "Problem"), (Ext, "Disabled"));
+    var targetActive    = Snap((Brb, "Started"), (Int, "Started"), (Ext, "Disabled"));
+    var bothEnabled     = Snap((Brb, "Started"), (Int, "Started"), (Ext, "Started"));
+    var missing         = Snap((Brb, "Started"), (Ext, "Started"));
+
+    string Run(params BluetoothSnapshot[] readings)
+    {
+        var tracker = new SwitchProgressTracker(AdapterRole.Internal);
+        return string.Join(",", readings.Select(s => tracker.Next(s)?.ToString() ?? "-"));
+    }
+
+    Check("normal switch", Run(originalActive, originalActive, bothOff, bothOff, targetStarting, targetActive),
+        "-,-,EnablingTarget,EnablingTarget,WaitingForStart,Verifying");
+    Check("original seen while stopping", Run(originalActive, originalStopping, bothOff), "-,DisablingCurrent,EnablingTarget");
+    Check("target fails, engine rolls back", Run(originalActive, bothOff, targetProblem, bothOff, originalStopping, originalActive),
+        "-,EnablingTarget,WaitingForStart,RollingBack,RollingBack,RollingBack");
+    Check("original never stops, engine gives up", Run(originalActive, originalActive, originalActive), "-,-,-");
+    Check("original comes back without the target ever starting", Run(originalActive, bothOff, originalActive),
+        "-,EnablingTarget,RollingBack");
+    Check("both enabled says nothing", Run(bothEnabled), "-");
+    Check("missing adapter says nothing", Run(missing), "-");
+    Check("other direction", string.Join(",", new[] { targetActive, bothOff, originalActive }
+        .Select(new SwitchProgressTracker(AdapterRole.External).Next).Select(p => p?.ToString() ?? "-")),
+        "-,EnablingTarget,Verifying");
+
+    // Through the orchestrator, with the simulation slowed just enough to be observed.
+    async Task<List<SwitchPhase>> Observe(SimulationMode mode)
+    {
+        var hw = new SimulatedHardware { Mode = mode, Speed = 0.05 };
+        var orchestrator = new SwitchOrchestrator(hw, hw)
+        {
+            VerifyWindow = TimeSpan.FromMilliseconds(60),
+            VerifyInterval = TimeSpan.FromMilliseconds(10),
+            ProgressInterval = TimeSpan.FromMilliseconds(5),
+        };
+        var seen = new List<SwitchPhase>();
+        await orchestrator.SwitchAsync(AdapterRole.Internal, new Recorder(seen));
+        return seen;
+    }
+
+    var normal = await Observe(SimulationMode.Normal);
+    Check("simulated switch: shows the target being turned on", normal.Contains(SwitchPhase.EnablingTarget), true);
+    Check("simulated switch: never shows a rollback", normal.Contains(SwitchPhase.RollingBack), false);
+    Check("simulated switch: ends on verifying", normal[^1], SwitchPhase.Verifying);
+    Check("simulated switch: phases only move forward",
+        normal.Zip(normal.Skip(1)).All(p => p.First < p.Second), true);
+
+    var rolledBack = await Observe(SimulationMode.FailAndRollBack);
+    Check("simulated failure: shows the rollback", rolledBack.Contains(SwitchPhase.RollingBack), true);
+
+    var declined = await Observe(SimulationMode.DeclineApproval);
+    Check("declined approval: never shows 'Starting'", declined.Contains(SwitchPhase.Starting), false);
 });
 
 // ---------------------------------------------------------------- script verification before elevation
@@ -366,16 +431,17 @@ await Test("launch path", async () =>
     ElevatedScriptRunner Runner(string mode, TimeSpan? timeout = null) =>
         new(FakeEngine(mode, work), logs, timeout) { Elevate = false };
 
-    var live = new List<string>();
-    var r = await Runner("ok").RunAsync(AdapterRole.Internal, new Recorder<string>(live), CancellationToken.None);
+    var starts = new List<int>();
+    var r = await Runner("ok").RunAsync(AdapterRole.Internal, starts.Add, CancellationToken.None);
     Check("ok: status", r.Status, ScriptRunStatus.Exited);
+    Check("ok: the start was signalled once, with a process id", starts.Count == 1 && starts[0] > 0, true);
     Check("ok: process exit code", r.ProcessExitCode, 0);
     Check("ok: logged exit code", r.LoggedExitCode, 0);
     Check("ok: not an unexpected end", r.EndedUnexpectedly, false);
     Check("ok: arguments reached the script", r.LogLines[0].Contains("Requested target: Upstairs. Execute: True."), true);
     Check("ok: no byte-order mark left in the first line", r.LogLines[0].StartsWith("20"), true);
     Check("ok: all four steps seen", r.LogLines.Count(l => l.Contains("Step ")), 4);
-    Check("ok: lines were reported live, in order", string.Join("\n", live), string.Join("\n", r.LogLines));
+    Check("ok: the script reported the same process id", r.LogLines.Any(l => l.EndsWith($"PID: {starts[0]}")), true);
     Check("ok: log file is kept on disk", File.Exists(r.LogPath), true);
     Check("ok: log file is inside the log folder", Path.GetDirectoryName(r.LogPath), logs);
 
@@ -395,21 +461,28 @@ await Test("launch path", async () =>
 
     // Kill the script from outside while it runs, as Task Manager would.
     var clock = System.Diagnostics.Stopwatch.StartNew();
-    var killer = new Recorder<string>(new List<string>(), line =>
+    r = await Runner("slow").RunAsync(AdapterRole.Internal, async pid =>
     {
-        var at = line.IndexOf("PID: ", StringComparison.Ordinal);
-        if (at >= 0)
-            System.Diagnostics.Process.GetProcessById(int.Parse(line[(at + 5)..])).Kill();
-    });
-    r = await Runner("slow").RunAsync(AdapterRole.Internal, killer, CancellationToken.None);
+        await Task.Delay(1500);   // let it write a few lines first
+        System.Diagnostics.Process.GetProcessById(pid).Kill();
+    }, CancellationToken.None);
     Check("script killed from outside: status", r.Status, ScriptRunStatus.Exited);
     Check("script killed from outside: flagged as unexpected", r.EndedUnexpectedly, true);
     Check("script killed from outside: noticed promptly", clock.Elapsed < TimeSpan.FromSeconds(10), true);
+    Check("script killed from outside: lines written before the kill are kept", r.LogLines.Any(l => l.Contains("Step 1/4")), true);
+
+    // Regression test for 1.0.0: the app used to read the log while the script was
+    // appending to it, which made Windows PowerShell's Add-Content fail and the script
+    // lose its own log lines. Nothing may open the log during the run any more.
+    r = await Runner("chatty").RunAsync(AdapterRole.Internal, null, CancellationToken.None);
+    Check("busy log: every line the script wrote is there", r.LogLines.Count(l => l.Contains("chatty line")), 200);
+    Check("busy log: final exit code line is there", r.LoggedExitCode, 0);
 
     // The runner gives up waiting but must leave the script running.
     r = await Runner("late", TimeSpan.FromSeconds(1.5)).RunAsync(AdapterRole.Internal, null, CancellationToken.None);
     Check("timeout: status", r.Status, ScriptRunStatus.TimedOut);
     Check("timeout: an explanation is given", r.Error?.Contains("left running"), true);
+    Check("timeout: the log of a still-running script is not read", r.LogLines.Count, 0);
     await Task.Delay(TimeSpan.FromSeconds(6));
     Check("timeout: the script was not killed and finished by itself",
         File.ReadAllText(r.LogPath!).Contains("Exit code: 0."), true);
@@ -438,8 +511,9 @@ await Test("launch path", async () =>
     var phases = new List<SwitchPhase>();
     var result = await orchestrator.SwitchAsync(AdapterRole.Internal, new Recorder(phases));
     Check("real process + unchanged adapters: not success", result.Kind, SwitchResultKind.StillOnOriginal);
-    Check("real process: phases were parsed from the real log", string.Join(",", phases),
-        "Checking,WaitingForApproval,Starting,DisablingCurrent,WaitingForStop,EnablingTarget,WaitingForStart,Verifying");
+    Check("real process: opening phases", string.Join(",", phases.Take(3)), "Checking,WaitingForApproval,Starting");
+    Check("real process: last phase", phases[^1], SwitchPhase.Verifying);
+    Check("real process: the log was still read for the explanation", result.Run!.LoggedExitCode, 0);
 
     try { Directory.Delete(work, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
 });
