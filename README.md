@@ -8,6 +8,11 @@ A lightweight Windows 11 app that switches a PC between two Bluetooth adapters w
 Windows only supports one active Bluetooth adapter at a time, so switching means disabling
 one adapter and enabling the other, then verifying the result.
 
+> **This is a personal tool for one specific PC.** The two adapters are identified by
+> hard-coded hardware IDs (see `AdapterCatalog` in `src/BluetoothSwitcher.Core/Adapters.cs`
+> and the top of `poc/Switch-Adapter.ps1`). To use it elsewhere you would have to change
+> those IDs, rebuild, and validate switching on your own hardware. No licence is granted.
+
 **Version 1.0.0.** Switching is validated on real hardware in both directions, with the
 script (2026-11-10) and through the installed app, including after a reboot (2026-11-11,
 tested by the owner).
