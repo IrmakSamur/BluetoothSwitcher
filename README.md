@@ -17,9 +17,9 @@ one adapter and enabling the other, then verifying the result.
 script (2026-11-10) and through the installed app, including after a reboot (2026-11-11,
 tested by the owner).
 
-The build after the last hardware test changed how the app shows progress (see "Lost log
-lines" under History of failures). The switching script is unchanged, but switching through
-that build has only been tested against simulated adapters.
+The final 1.0.0 build, which shows progress from adapter state instead of the script's log
+(see "Lost log lines" under History of failures), was reinstalled and switched in both
+directions on 2026-11-11 by the owner; both switch logs were complete.
 
 ## Install, update, uninstall
 
