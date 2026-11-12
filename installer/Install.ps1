@@ -39,7 +39,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $Source) { $Source = Join-Path $here '..\dist\BluetoothSwitcher' }
+if (-not $Source) {
+    # Release zip: the package folder sits next to this script. Repository: it is in dist\.
+    $beside = Join-Path $here 'BluetoothSwitcher'
+    $Source = if (Test-Path -LiteralPath (Join-Path $beside 'package.sha256')) { $beside } else { Join-Path $here '..\dist\BluetoothSwitcher' }
+}
 
 # Well-known SIDs, so this works on any display language.
 $SID_SYSTEM = '*S-1-5-18'; $SID_ADMINS = '*S-1-5-32-544'; $SID_USERS = '*S-1-5-32-545'

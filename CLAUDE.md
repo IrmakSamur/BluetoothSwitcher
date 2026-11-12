@@ -89,8 +89,9 @@ Windows 11 desktop app for one-click switching between two Bluetooth adapters on
 5. Real install and hardware validation through the installed app, both directions and
    after a reboot (done by the user, 2026-11-11).
 6. Version 1.0.0 with application icon (done, tagged v1.0.0).
-7. Two-phase stop after the removal-veto failures of 2026-11-11 (1.1.0-beta.1, in
-   validation; not released).
+7. Two-phase stop after the removal-veto failures of 2026-11-11 (done, 1.1.0). Validated on
+   hardware 2026-11-12, both directions through the app with Steam holding the controller, and
+   across a restart. Not verified: a refused stop on real hardware, and longer-term reliability.
 
 ## Log file rule
 
@@ -108,4 +109,4 @@ Windows 11 desktop app for one-click switching between two Bluetooth adapters on
   and must never touch real device state; add a mocked scenario for each new failure mode.
 - Every device-state change must be verified by re-reading device status, with a timeout.
 - State clearly whether a claim is verified on this machine or a hypothesis.
-- The repository is local only for now. Ask before committing.
+- The repository is public on GitHub (IrmakSamur/BluetoothSwitcher). Ask before committing; never push, tag or publish a release without explicit approval.

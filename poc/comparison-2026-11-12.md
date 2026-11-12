@@ -197,3 +197,40 @@ Not yet verified:
 - Whether the state survives a Windows restart (the disabled adapter must stay disabled).
 - Switching through the app: the installed app still uses the old script.
 - Repeatability over many switches and days.
+
+## Validation through the installed app (1.1.0-beta.1, commit 964bebf)
+
+Installed 19:54 by the assistant with the user accepting UAC. `--verify-install` returns 0;
+the installed engine is `poc/Switch-Adapter-Next.ps1`. The previous install (1.0.0+ce8b873) is
+kept as an installable package in `dist\BluetoothSwitcher-1.0.0-backup` (not in Git).
+
+- App switch A, 19:56:20 - Downstairs -> Upstairs, clicked by the user in the app: **success**.
+  Controller paired on the dongle at 19:56:05 (15 s earlier), Steam running since 19:42:42. Engine log:
+  stop 0x0, stopped on the first poll; persistent disable 0x0; `pnputil /enable-device` exit 0;
+  active 0.3 s later; exit code 0. App showed "Now on Upstairs". Verified afterwards: state Clean,
+  no restart flags, registry flags consistent, no removal vetoes. Not checked for this run: a
+  handle scan before the click, so that Steam was holding the controller is inferred from the
+  earlier runs, not observed.
+- App switch B, 19:58:58 - Upstairs -> Downstairs, clicked by the user in the app: **success**.
+  Observed 36 s before the click (19:58:22): controller paired on the internal adapter at 19:58:03 and
+  connected; `steam.exe` 1 handle and `XboxService.exe` 2 handles on its game-controller device.
+  Engine log: stop 0x0, stopped on the first poll; persistent disable 0x0; enable exit 0; active
+  0.3 s later; exit code 0. Verified afterwards: state Clean, no restart flags, registry flags
+  consistent, no removal vetoes.
+- State after a Windows restart: **unchanged**. Restarted by the user; boot at 20:01:23. Checked at
+  20:02:39: Downstairs (BARROT) started with the enumerator up, Upstairs (MediaTek) disabled,
+  ConfigFlags dongle 0x0 and internal 0x1 (same as before the restart), no restart flags, state
+  Clean, no removal vetoes, no adapter errors. Steam started by itself at 20:02:02.
+
+## Validation status of 1.1.0-beta.1
+
+Passed on 2026-11-12: both directions with the script alone, both directions through the
+installed app, with Steam running and the controller freshly paired and connected, and the
+state after a restart.
+
+Still open:
+- A refusal of the stop request has never occurred on hardware; that path is covered by
+  mocked tests only.
+- Why Windows refuses `pnputil /disable-device` but accepts the non-persistent stop request
+  in the same condition is not known.
+- Repeatability over more switches and days.

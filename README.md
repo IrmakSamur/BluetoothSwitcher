@@ -10,23 +10,35 @@ one adapter and enabling the other, then verifying the result.
 
 > **This is a personal tool for one specific PC.** The two adapters are identified by
 > hard-coded hardware IDs (see `AdapterCatalog` in `src/BluetoothSwitcher.Core/Adapters.cs`
-> and the top of `poc/Switch-Adapter.ps1`). To use it elsewhere you would have to change
+> and the top of `poc/Switch-Adapter-Next.ps1`). To use it elsewhere you would have to change
 > those IDs, rebuild, and validate switching on your own hardware. No licence is granted.
 
-**Version 1.0.0.** Switching is validated on real hardware in both directions, with the
+**Version 1.1.0.** Switching is validated on real hardware in both directions, with the
 script (2026-11-10) and through the installed app, including after a reboot (2026-11-11,
 tested by the owner).
 
-The final 1.0.0 build was switched in both directions on 2026-11-11 by the owner.
+### 1.1.0
 
-### 1.1.0-beta.1 (in validation, not released)
+Fixes switching when a game controller is in use. In 1.0.0, once a DualSense had connected,
+Steam kept it open and Windows refused `pnputil /disable-device`; the adapter was left
+running but flagged "disabled, pending restart", and after the restart both adapters were
+disabled (see "Removal veto" under History of failures). 1.1.0 stops the adapter in two
+phases instead and writes nothing persistent until it has really stopped.
 
-1.0.0 can fail when a game controller is paired: with the controller held open by Steam,
-Windows refused `pnputil /disable-device`, and the adapter was left running but flagged
-"disabled, pending restart" (see "Removal veto" under History of failures). The beta
-switches with a two-phase stop instead and detects the pending-restart state. Validated so
-far with the script alone, both directions, Steam running and the controller connected
-(2026-11-12); validation through the app and across a restart is in progress.
+Validated on 2026-11-12 on the owner's hardware: both directions with the script alone and
+through the installed app, with Steam running and the controller freshly paired and
+connected, and the adapter state after a Windows restart.
+
+Not verified:
+
+- **A refused stop on real hardware.** With the new method Windows has never refused a stop,
+  so the "Switch blocked" path (nothing changed, blocker named) is covered by simulated
+  tests only.
+- **Longer-term reliability.** All validation happened on one day.
+- **The cause.** Why Windows refuses one stop request and accepts the other in the same
+  situation is not known; the fix rests on observed behaviour.
+
+1.0.0 (2026-11-11) was the first release.
 ## Install, update, uninstall
 
 The app must be installed in a protected folder before it will switch adapters, because it
@@ -258,6 +270,7 @@ Recovery if Bluetooth is lost:
 4. Installer with protected install folder and script verification. *(done)*
 5. Real install and hardware validation of switching through the installed app. *(done)*
 6. Version 1.0.0 with application icon. *(done)*
+7. Version 1.1.0: two-phase stop after the removal-veto failures. *(done)*
 
 ## Future possibilities
 
