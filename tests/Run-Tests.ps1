@@ -62,6 +62,23 @@ foreach ($name in $scenarios) {
 }
 "scenarios passed: $passed of $($scenarios.Count)"
 
+'=== 3b. mocked scenarios, experimental two-phase stop (poc\Switch-Adapter-Next.ps1) ==='
+$nextScenarios = 'happy', 'vetoed', 'restart-pending', 'stop-never-completes', 'persist-fails', 'persist-falls-back',
+                 'target-never-starts', 'target-enable-fails', 'rollback-target-vetoed', 'stop-in-wait',
+                 'already-on-target', 'both-disabled'
+$nextPassed = 0
+foreach ($name in $nextScenarios) {
+    $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-NextScenario.ps1') -Scenario $name
+    $result = @($out | Where-Object { $_ -like 'RESULT*' })
+    if ($result.Count -eq 1 -and $result[0] -match 'PASS$') { $nextPassed++; $result[0] }
+    else {
+        $failures++
+        if ($result.Count) { $result } else { "RESULT $name produced no result line FAIL" }
+        $out | Select-Object -Last 12 | ForEach-Object { "    $_" }
+    }
+}
+"experimental scenarios passed: $nextPassed of $($nextScenarios.Count)"
+
 '=== 4. core library (C#) ==='
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if (-not $dotnet -or -not (& dotnet --list-sdks)) {

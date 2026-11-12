@@ -173,9 +173,12 @@ public sealed partial class MainWindow : Window
 
     private void ShowSnapshot(BluetoothSnapshot snapshot)
     {
-        var active = snapshot.Active;
+        // In a restart-pending state an adapter is still running; show which one, but
+        // never present the state as healthy.
+        var active = snapshot.Condition == BluetoothCondition.RestartPending ? snapshot.Running : snapshot.Active;
         (CurrentText.Text, StateIcon.Glyph, var healthy) = snapshot.Condition switch
         {
+            BluetoothCondition.RestartPending => ("Restart required", "", false),
             BluetoothCondition.Clean => ($"Current: {AdapterCatalog.Location(active!.Value)}", "", true),
             BluetoothCondition.BothDisabled => ("Bluetooth is off", "", false),
             BluetoothCondition.AdapterMissing => ("Adapter not found", "", false),
@@ -192,9 +195,11 @@ public sealed partial class MainWindow : Window
     {
         if (isActive)
         {
-            subtitle.Text = "Active";
-            subtitle.Foreground = ThemeBrush("SystemFillColorSuccessBrush");
-            card.BorderBrush = ThemeBrush("SystemFillColorSuccessBrush");
+            var flagged = adapter is { NeedsRestart: true };
+            var brush = ThemeBrush(flagged ? "SystemFillColorCautionBrush" : "SystemFillColorSuccessBrush");
+            subtitle.Text = flagged ? "Active until restart" : "Active";
+            subtitle.Foreground = brush;
+            card.BorderBrush = brush;
             card.BorderThickness = new Thickness(2);
         }
         else
@@ -222,6 +227,13 @@ public sealed partial class MainWindow : Window
         {
             ResultBar.IsOpen = false;
             HintPanel.Visibility = Visibility.Visible;
+            return;
+        }
+
+        if (snapshot.Condition == BluetoothCondition.RestartPending)
+        {
+            ShowBar(InfoBarSeverity.Warning, "Restart required",
+                SwitchOrchestrator.DescribeRestartPending(snapshot), [], closable: false);
             return;
         }
 
@@ -348,7 +360,7 @@ public sealed partial class MainWindow : Window
         {
             SwitchResultKind.Switched or SwitchResultKind.AlreadyActive => InfoBarSeverity.Success,
             SwitchResultKind.Cancelled => InfoBarSeverity.Informational,
-            SwitchResultKind.StillOnOriginal or SwitchResultKind.Refused => InfoBarSeverity.Warning,
+            SwitchResultKind.StillOnOriginal or SwitchResultKind.Refused or SwitchResultKind.RestartRequired => InfoBarSeverity.Warning,
             _ => InfoBarSeverity.Error,
         };
         _resultPinned = true;

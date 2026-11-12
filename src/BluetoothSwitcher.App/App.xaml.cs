@@ -91,6 +91,7 @@ public sealed record AppOptions(bool Demo, SimulationMode DemoMode, AdapterRole?
                     "die" => SimulationMode.DieMidSwitch,
                     "decline" => SimulationMode.DeclineApproval,
                     "lie" => SimulationMode.LieAboutSuccess,
+                    "veto" => SimulationMode.VetoedNeedsRestart,
                     _ => SimulationMode.Normal,
                 };
             }

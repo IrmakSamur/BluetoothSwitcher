@@ -39,14 +39,19 @@ public static class PnpUtilParser
     }
 
     /// <summary>Builds a snapshot of the two adapters from a device list.</summary>
-    public static BluetoothSnapshot ToSnapshot(IReadOnlyList<PnpDevice> devices)
+    /// <param name="needsRestart">
+    /// Says whether a device (by instance ID) is flagged as needing a system restart.
+    /// pnputil's output does not include this, so it is looked up separately.
+    /// </param>
+    public static BluetoothSnapshot ToSnapshot(IReadOnlyList<PnpDevice> devices, Func<string, bool>? needsRestart = null)
     {
         List<AdapterState> Find(AdapterRole role)
         {
             var prefix = AdapterCatalog.HardwareId(role) + @"\";
             return devices
                 .Where(d => d.InstanceId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                .Select(d => new AdapterState(role, d.InstanceId, d.Description, d.Status))
+                .Select(d => new AdapterState(role, d.InstanceId, d.Description, d.Status,
+                    needsRestart?.Invoke(d.InstanceId) ?? false))
                 .ToList();
         }
 
@@ -103,7 +108,8 @@ public sealed class PnpUtilStateReader : IDeviceStateReader
             if (process.ExitCode != 0)
                 throw new InvalidOperationException($"pnputil exited with code {process.ExitCode}.");
 
-            return PnpUtilParser.ToSnapshot(PnpUtilParser.Parse(output));
+            // An unknown answer counts as "not flagged": the flag only ever adds a refusal.
+            return PnpUtilParser.ToSnapshot(PnpUtilParser.Parse(output), id => DevNode.NeedsRestart(id) ?? false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

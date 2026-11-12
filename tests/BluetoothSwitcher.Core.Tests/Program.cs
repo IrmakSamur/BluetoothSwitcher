@@ -36,6 +36,21 @@ static string FakeEngine(string mode, string workDir)
     return copy;
 }
 
+// Read-only: print what the app's own reader sees on this machine right now.
+// Run:  dotnet run --project tests\BluetoothSwitcher.Core.Tests -c Release -- --live-state
+if (args.Contains("--live-state"))
+{
+    var live = await new PnpUtilStateReader().ReadAsync();
+    Console.WriteLine($"condition:       {live.Condition}");
+    Console.WriteLine($"active:          {live.Active?.ToString() ?? "(none)"}");
+    Console.WriteLine($"running:         {live.Running?.ToString() ?? "(none)"}");
+    Console.WriteLine($"restart pending: {live.RestartPendingAdapter?.Location ?? "(none)"}");
+    Console.WriteLine($"description:     {live.Describe()}");
+    if (live.Condition == BluetoothCondition.RestartPending)
+        Console.WriteLine($"message:         {SwitchOrchestrator.DescribeRestartPending(live)}");
+    return 0;
+}
+
 // Interactive check of the real elevated launch, with the harmless stand-in engine.
 // Run:  dotnet run --project tests\BluetoothSwitcher.Core.Tests -c Release -- --uac-check
 if (args.Contains("--uac-check"))
@@ -295,6 +310,53 @@ await Test("orchestrator", async () =>
     var broken = new SwitchOrchestrator(new ThrowingReader(), hw);
     r = await broken.SwitchAsync(AdapterRole.Internal, null);
     Check("unreadable state: kind", r.Kind, SwitchResultKind.StateUnknown);
+});
+
+// ---------------------------------------------------------------- restart-pending state (removal veto)
+// What happened on 2026-11-11: Steam had the paired controller open, Windows vetoed the
+// disable, pnputil reported 3010, and the adapter kept running but flagged for a restart.
+
+await Test("restart pending", async () =>
+{
+    var devices = PnpUtilParser.Parse(Xml((Brb, "Started"), (Int, "Disabled"), (Ext, "Started")));
+    var clean = PnpUtilParser.ToSnapshot(devices);
+    var flagged = PnpUtilParser.ToSnapshot(devices, id => id == Ext);
+    Check("unflagged: clean", clean.Condition, BluetoothCondition.Clean);
+    Check("flagged running adapter: condition", flagged.Condition, BluetoothCondition.RestartPending);
+    Check("flagged: not counted as cleanly active", flagged.IsCleanlyOn(AdapterRole.External), false);
+    Check("flagged: no 'active' adapter", flagged.Active, null);
+    Check("flagged: still reports which adapter is running", flagged.Running, AdapterRole.External);
+    Check("flagged: names the flagged adapter", flagged.RestartPendingAdapter?.Role, AdapterRole.External);
+    Check("flagged: description mentions it", flagged.Describe().Contains("restart pending"), true);
+
+    var flaggedDisabled = PnpUtilParser.ToSnapshot(devices, id => id == Int);
+    Check("flag on the disabled adapter also blocks", flaggedDisabled.Condition, BluetoothCondition.RestartPending);
+
+    // A switch attempt that gets vetoed must not be reported as a clean rollback.
+    var (o, hw) = Rig(SimulationMode.VetoedNeedsRestart);
+    var r = await o.SwitchAsync(AdapterRole.Internal, null);
+    Check("vetoed switch: kind", r.Kind, SwitchResultKind.RestartRequired);
+    Check("vetoed switch: not success", r.IsSuccess, false);
+    Check("vetoed switch: not reported as 'still on original'", r.Kind == SwitchResultKind.StillOnOriginal, false);
+    Check("vetoed switch: says a restart is needed", r.Detail.Contains("needing a restart"), true);
+    Check("vetoed switch: says Bluetooth still works for now", r.Detail.Contains("keeps working on Downstairs"), true);
+    Check("vetoed switch: says what happens after the restart", r.Detail.Contains("will be disabled"), true);
+    Check("vetoed switch: the engine did report a rollback", r.Run!.ExitCode, 2);
+
+    // Trying again must not start the engine or ask for elevation.
+    r = await o.SwitchAsync(AdapterRole.Internal, null);
+    Check("second attempt: kind", r.Kind, SwitchResultKind.RestartRequired);
+    Check("second attempt: engine not run again", hw.RunCount, 1);
+    Check("second attempt: says nothing was changed", r.Detail.StartsWith("Nothing was changed."), true);
+
+    // After a restart: the flag is gone, the flagged adapter is disabled, Bluetooth is off.
+    hw.SetRestartPending(null);
+    hw.Set("Disabled", "Disabled", enumerator: false);
+    r = await o.SwitchAsync(AdapterRole.Internal, null);
+    Check("after restart: both disabled is refused with a recovery command", r.RecoveryCommands.Count, 1);
+
+    // The live reader must be able to ask Windows; an unknown device gives "unknown".
+    Check("unknown device: restart flag is unknown, not false", DevNode.NeedsRestart(@"USB\VID_FFFF&PID_FFFF\NOPE"), null);
 });
 
 // ---------------------------------------------------------------- progress from adapter state

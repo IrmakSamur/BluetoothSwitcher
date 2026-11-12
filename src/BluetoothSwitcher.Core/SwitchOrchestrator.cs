@@ -40,6 +40,13 @@ public enum SwitchResultKind
 
     /// <summary>The adapter state could not be read, so nothing can be claimed.</summary>
     StateUnknown,
+
+    /// <summary>
+    /// Verified: Windows has flagged an adapter as needing a restart. Bluetooth may still
+    /// be working, but nothing can be switched until Windows has been restarted, and the
+    /// flagged adapter will come up disabled.
+    /// </summary>
+    RestartRequired,
 }
 
 public sealed record SwitchResult(
@@ -90,6 +97,9 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
 
         if (before.IsCleanlyOn(target))
             return new(SwitchResultKind.AlreadyActive, $"Already on {targetName}", "Nothing was changed.", before, null, []);
+
+        if (before.Condition == BluetoothCondition.RestartPending)
+            return RestartRequired(before, null, "Nothing was changed. ");
 
         if (before.Condition != BluetoothCondition.Clean)
             return new(SwitchResultKind.Refused, "Switch not started",
@@ -167,6 +177,12 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
         }
 
         // 4. Decide from the verified state.
+        //    A restart-pending flag comes first: even if an adapter is running, the state
+        //    is not one a rollback restored. It is a state Windows will change at the
+        //    next restart, and it must not be reported as "still on the original".
+        if (after.Condition == BluetoothCondition.RestartPending)
+            return RestartRequired(after, run, string.Empty);
+
         if (after.IsCleanlyOn(target))
         {
             if (run.Status == ScriptRunStatus.Declined)
@@ -193,6 +209,24 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
             after.Describe() + ". " + Explain(run), after, run, RecoveryCommands(after, original));
     }
 
+    private static SwitchResult RestartRequired(BluetoothSnapshot snapshot, ScriptRunResult? run, string prefix) =>
+        new(SwitchResultKind.RestartRequired, "Restart required", prefix + DescribeRestartPending(snapshot), snapshot, run, []);
+
+    /// <summary>What a restart-pending flag means for the user, in plain words.</summary>
+    public static string DescribeRestartPending(BluetoothSnapshot snapshot)
+    {
+        var flagged = snapshot.RestartPendingAdapter;
+        if (flagged is null)
+            return string.Empty;
+        var running = snapshot.Running is { } role ? AdapterCatalog.Location(role) : null;
+        return
+            $"Windows could not stop {flagged.Location} ({flagged.Name}) because another program had a Bluetooth device open, " +
+            "and has marked the adapter as needing a restart. " +
+            (running is not null ? $"Bluetooth keeps working on {running} until then. " : string.Empty) +
+            "Switching is not possible until Windows has been restarted. " +
+            $"After the restart {flagged.Location} will be disabled: open this app and choose an adapter to turn Bluetooth back on.";
+    }
+
     /// <summary>
     /// Re-reads until the state is clean or the window passes, so a state that is
     /// still settling is not reported as a failure. Returns the last reading.
@@ -208,7 +242,8 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
             {
                 last = await reader.ReadAsync(CancellationToken.None).ConfigureAwait(false);
                 lastError = null;
-                if (singleRead || last.Condition == BluetoothCondition.Clean)
+                // A restart-pending flag does not clear by waiting.
+                if (singleRead || last.Condition is BluetoothCondition.Clean or BluetoothCondition.RestartPending)
                     return last;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

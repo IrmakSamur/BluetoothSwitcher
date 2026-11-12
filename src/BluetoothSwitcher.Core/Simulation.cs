@@ -16,6 +16,12 @@ public enum SimulationMode
 
     /// <summary>The engine logs success but the adapters do not change.</summary>
     LieAboutSuccess,
+
+    /// <summary>
+    /// The disable is vetoed because a program has a Bluetooth device open, as Steam
+    /// did on 2026-11-11: the adapter keeps running but is flagged as needing a restart.
+    /// </summary>
+    VetoedNeedsRestart,
 }
 
 /// <summary>
@@ -31,6 +37,10 @@ public sealed class SimulatedHardware : IDeviceStateReader, ISwitchRunner
     private string _internalStatus = "Disabled";
     private string _externalStatus = "Started";
     private bool _enumerator = true;
+    private AdapterRole? _needsRestart;
+
+    /// <summary>Flags one adapter as needing a system restart, or clears the flag.</summary>
+    public void SetRestartPending(AdapterRole? role) { lock (_gate) { _needsRestart = role; } }
 
     public SimulationMode Mode { get; set; } = SimulationMode.Normal;
 
@@ -60,7 +70,13 @@ public sealed class SimulatedHardware : IDeviceStateReader, ISwitchRunner
             };
             if (_enumerator)
                 devices.Add(new(AdapterCatalog.EnumeratorPrefix + "SIM&0&1", "Microsoft Bluetooth Enumerator", "Started"));
-            return Task.FromResult(PnpUtilParser.ToSnapshot(devices));
+            var flagged = _needsRestart switch
+            {
+                AdapterRole.Internal => InternalId,
+                AdapterRole.External => ExternalId,
+                _ => null,
+            };
+            return Task.FromResult(PnpUtilParser.ToSnapshot(devices, id => id == flagged));
         }
     }
 
@@ -107,6 +123,20 @@ public sealed class SimulatedHardware : IDeviceStateReader, ISwitchRunner
 
         Log("INFO", "Step 1/4: disable the active adapter.");
         await Wait(300);
+
+        if (Mode == SimulationMode.VetoedNeedsRestart)
+        {
+            // Exactly what pnputil reported on the real machine.
+            SetRestartPending(source);
+            Log("INFO", "  pnputil> System reboot is needed to complete configuration operations!");
+            Log("INFO", "  pnputil exit code: 3010");
+            Log("ERROR", "Disable returned exit code 3010 (3010 means a reboot is required).");
+            Log("WARN", "ROLLBACK: restoring the original adapter.");
+            await Wait(5000);
+            Log("WARN", "Rolled back.");
+            return Exit(2);
+        }
+
         SetStatus(source, "Disabled");
         SetEnumerator(false);
 
