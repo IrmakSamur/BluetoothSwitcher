@@ -92,6 +92,7 @@ public sealed record AppOptions(bool Demo, SimulationMode DemoMode, AdapterRole?
                     "decline" => SimulationMode.DeclineApproval,
                     "lie" => SimulationMode.LieAboutSuccess,
                     "veto" => SimulationMode.VetoedNeedsRestart,
+                    "blocked" => SimulationMode.BlockedCleanly,
                     _ => SimulationMode.Normal,
                 };
             }

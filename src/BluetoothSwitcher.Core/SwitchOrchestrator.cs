@@ -196,8 +196,11 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
             if (run.Status == ScriptRunStatus.Declined)
                 return new(SwitchResultKind.Cancelled, "Switch cancelled",
                     $"Administrator approval was declined. Still on {originalName}.", after, run, []);
-            return new(SwitchResultKind.StillOnOriginal, $"Switch failed, still on {originalName}",
-                Explain(run), after, run, []);
+            // Exit code 6: Windows refused to stop the adapter and the engine wrote nothing.
+            var title = run.Status == ScriptRunStatus.Exited && run.ExitCode == 6
+                ? $"Switch blocked, still on {originalName}"
+                : $"Switch failed, still on {originalName}";
+            return new(SwitchResultKind.StillOnOriginal, title, Explain(run), after, run, []);
         }
 
         if (after.Condition == BluetoothCondition.BothDisabled)
@@ -291,6 +294,8 @@ public sealed class SwitchOrchestrator(IDeviceStateReader reader, ISwitchRunner 
             2 => "The switch script failed and rolled back.",
             3 => "The switch script failed and its rollback also failed.",
             4 => "Another switch was already running.",
+            5 => "The switch script refused: an adapter is flagged as needing a restart.",
+            6 => "Nothing was changed and no restart is needed. Close the program named below, or try again.",
             { } other => $"The switch script exited with code {other}.",
             null => "The switch script gave no exit code.",
         };

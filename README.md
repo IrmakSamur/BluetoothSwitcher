@@ -17,10 +17,16 @@ one adapter and enabling the other, then verifying the result.
 script (2026-11-10) and through the installed app, including after a reboot (2026-11-11,
 tested by the owner).
 
-The final 1.0.0 build, which shows progress from adapter state instead of the script's log
-(see "Lost log lines" under History of failures), was reinstalled and switched in both
-directions on 2026-11-11 by the owner; both switch logs were complete.
+The final 1.0.0 build was switched in both directions on 2026-11-11 by the owner.
 
+### 1.1.0-beta.1 (in validation, not released)
+
+1.0.0 can fail when a game controller is paired: with the controller held open by Steam,
+Windows refused `pnputil /disable-device`, and the adapter was left running but flagged
+"disabled, pending restart" (see "Removal veto" under History of failures). The beta
+switches with a two-phase stop instead and detects the pending-restart state. Validated so
+far with the script alone, both directions, Steam running and the controller connected
+(2026-11-12); validation through the app and across a restart is in progress.
 ## Install, update, uninstall
 
 The app must be installed in a protected folder before it will switch adapters, because it
@@ -125,8 +131,11 @@ BluetoothSwitcher.exe (WinUI 3, NOT elevated)
 ```
 
 - **The UI never runs elevated.** It only reads device state.
-- **The switching engine is the validated PowerShell script**, unchanged. The app starts it
-  elevated and waits for it to exit.
+- **The switching engine is a PowerShell script** (`poc/Switch-Adapter-Next.ps1`, installed as
+  `Switch-Adapter.ps1`). The app starts it elevated and waits for it to exit.
+- **Two-phase stop.** The script first asks Windows to stop the active adapter without
+  writing anything. Only when it has stopped does it mark it disabled; then it enables the
+  target. If Windows refuses the stop, nothing has changed and no restart is needed.
 - **Progress comes from the adapters.** While the script runs, the app repeats its read-only
   status query and shows which step the adapters are in. It does not open the script's log
   until the script has exited; the log is then read once, to explain a failure.
@@ -161,7 +170,9 @@ damaged or incomplete copy; it is not a signature.
 
 | Path | Purpose |
 |---|---|
-| `poc/Switch-Adapter.ps1` | Switching engine (disable, verify, enable, verify, rollback). |
+| `poc/Switch-Adapter-Next.ps1` | Switching engine shipped with the app (two-phase stop, verify, enable, verify, rollback). |
+| `poc/Switch-Adapter.ps1` | Previous engine (`pnputil /disable-device`), kept for reference and rollback. |
+| `poc/Probe-AdapterStop.ps1`, `poc/Get-BluetoothHandleHolders.ps1` | Diagnostics: non-persistent stop probe; who holds the adapter's devices open. |
 | `poc/Get-AdapterStatus.ps1` | Read-only status report. |
 | `src/BluetoothSwitcher.Core` | Adapter detection, state parsing, switch orchestration, script verification. No UI. |
 | `src/BluetoothSwitcher.App` | WinUI 3 window. |
@@ -211,6 +222,15 @@ Earlier evaluation of other options: PowerShell-only UI (weak error handling), C
   temporary file. Switching was never affected: the script ignores log-write failures and the
   app decides the outcome from adapter state. Fixed by not opening the log while the script
   runs and deriving progress from adapter state instead.
+- **Removal veto (2026-11-11).** After the DualSense had connected, Steam kept a handle on
+  its HID device. `pnputil /disable-device` was then refused by Windows (Kernel-PnP event 225
+  names `steam.exe`), returned 3010, and left the adapter running but flagged for a restart;
+  after the restart both adapters were disabled. Steam appears in 31 such vetoes since
+  2026-10-28, which probably also explains the original "Generic failure". Closing Steam
+  releases the block. The non-persistent stop request (`CM_Query_And_Remove_SubTree`) was
+  accepted in the same condition every time it was tried, so the engine now stops that way
+  first and writes the disabled flag only afterwards. Why Windows treats the two requests
+  differently is not known. Record: `poc/comparison-2026-11-12.md`.
 - DualSense "mutual authentication failed" events are a pairing limitation: the controller
   remembers one host and each adapter has its own address. Not a switching bug; out of scope.
 

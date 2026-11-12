@@ -34,9 +34,16 @@ Windows 11 desktop app for one-click switching between two Bluetooth adapters on
 - Stack: C# / .NET 10, WinUI 3 (Windows App SDK), unpackaged. See README for the diagram.
 - **The app runs unelevated.** No `requireAdministrator` manifest. It reads state with
   `pnputil /enum-devices ... /format xml` and changes nothing itself.
-- **`poc/Switch-Adapter.ps1` is the switching engine.** It is validated on real hardware in
-  both directions. Do not change it, shorten its detection, or reduce the 2 s settle pause
-  unless the user asks; reliability comes before speed.
+- **`poc/Switch-Adapter-Next.ps1` is the switching engine the app ships** (installed as
+  `Switch-Adapter.ps1`). It stops the active adapter in two phases: a non-persistent stop
+  (`CM_Query_And_Remove_SubTree`), and only once that has succeeded a persistent disable
+  (`CM_Disable_DevNode`). A refused stop therefore writes nothing. Never reintroduce
+  `pnputil /disable-device` on a running adapter: when Windows vetoes it (Steam holding a
+  paired controller did, on 2026-11-11) it leaves the adapter "disabled, pending restart".
+- `poc/Switch-Adapter.ps1` is the previous engine, kept for reference and rollback. Do not
+  change either script, shorten detection, or reduce the 2 s settle pause unless the user asks.
+- The engine declares its cfgmgr32 calls in memory (Reflection.Emit). Do not use
+  `Add-Type -TypeDefinition` in it: that compiles to the temp folder while elevated.
 - The app starts the script elevated (one UAC prompt per switch) and waits for it to exit.
 - **Never report success from the script's log or exit code.** After the script exits, re-read
   the real adapter state: success only if the target is started with a Bluetooth enumerator
@@ -59,7 +66,7 @@ Windows 11 desktop app for one-click switching between two Bluetooth adapters on
 - The package is the Release **build** output. Do not switch `Build-Package.ps1` to
   `dotnet publish`: it omits `BluetoothSwitcher.pri` and the `.xbf` files and the app then
   crashes at startup.
-- After changing `poc/Switch-Adapter.ps1` the app must be rebuilt and reinstalled, because the
+- After changing `poc/Switch-Adapter-Next.ps1` the app must be rebuilt and reinstalled, because the
   embedded hash changes.
 
 ## Layout
@@ -81,7 +88,9 @@ Windows 11 desktop app for one-click switching between two Bluetooth adapters on
 4. Installer and script verification (done).
 5. Real install and hardware validation through the installed app, both directions and
    after a reboot (done by the user, 2026-11-11).
-6. Version 1.0.0 with application icon (done).
+6. Version 1.0.0 with application icon (done, tagged v1.0.0).
+7. Two-phase stop after the removal-veto failures of 2026-11-11 (1.1.0-beta.1, in
+   validation; not released).
 
 ## Log file rule
 

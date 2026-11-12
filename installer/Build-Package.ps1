@@ -5,7 +5,7 @@
 .DESCRIPTION
     1. Runs the test suite (skip with -SkipTests).
     2. Builds the WinUI 3 app (Release, win-x64). The build embeds the SHA-256 of
-       poc\Switch-Adapter.ps1 in the app and copies that script next to the exe.
+       poc\Switch-Adapter-Next.ps1 in the app and copies that script next to the exe.
     3. Adds Uninstall.ps1.
     4. Writes package.sha256, a list of every file and its hash, which Install.ps1
        uses to detect a damaged or incomplete copy.
@@ -48,9 +48,9 @@ foreach ($required in 'BluetoothSwitcher.exe', 'BluetoothSwitcher.pri', 'App.xbf
 }
 
 # The packaged script must be byte-identical to the validated one in poc\.
-$sourceHash  = (Get-FileHash -LiteralPath (Join-Path $root 'poc\Switch-Adapter.ps1') -Algorithm SHA256).Hash
+$sourceHash  = (Get-FileHash -LiteralPath (Join-Path $root 'poc\Switch-Adapter-Next.ps1') -Algorithm SHA256).Hash
 $packageHash = (Get-FileHash -LiteralPath (Join-Path $package 'Switch-Adapter.ps1') -Algorithm SHA256).Hash
-if ($sourceHash -ne $packageHash) { throw 'The packaged switch script differs from poc\Switch-Adapter.ps1.' }
+if ($sourceHash -ne $packageHash) { throw 'The packaged switch script differs from poc\Switch-Adapter-Next.ps1.' }
 
 # File list with hashes. package.sha256 itself is not listed.
 $manifest = Join-Path $package 'package.sha256'

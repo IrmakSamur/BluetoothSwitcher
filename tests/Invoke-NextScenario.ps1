@@ -67,8 +67,8 @@ function Add-Pending { param($Id, $Kind, $Reads, $Apply) $global:Sim.Pending += 
 try {
     foreach ($st in $statements) {
         if ($st -is [System.Management.Automation.Language.ExitStatementAst]) { continue }
-        # The real Add-Type (cfgmgr32 P/Invoke) is not needed: every caller is replaced below.
-        if ($st.Extent.Text -like 'Add-Type*') { continue }
+        # The real cfgmgr32 declarations are not needed: every caller is replaced below.
+        if ($st.Extent.Text -like '$script:Cm = *') { continue }
         if ($st -eq $mainTry) {
             $PollMs = 20
             function Test-Elevated   { $true }

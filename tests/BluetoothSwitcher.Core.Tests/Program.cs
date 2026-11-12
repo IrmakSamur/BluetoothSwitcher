@@ -355,6 +355,18 @@ await Test("restart pending", async () =>
     r = await o.SwitchAsync(AdapterRole.Internal, null);
     Check("after restart: both disabled is refused with a recovery command", r.RecoveryCommands.Count, 1);
 
+    // Two-phase engine: a refused stop writes nothing, so this is a plain "still on the
+    // original", clearly labelled as blocked, with the blocker named and no restart talk.
+    (o, hw) = Rig(SimulationMode.BlockedCleanly);
+    r = await o.SwitchAsync(AdapterRole.Internal, null);
+    Check("cleanly blocked: kind", r.Kind, SwitchResultKind.StillOnOriginal);
+    Check("cleanly blocked: title", r.Title, "Switch blocked, still on Downstairs");
+    Check("cleanly blocked: names the blocker", r.Detail.Contains("steam.exe"), true);
+    Check("cleanly blocked: says no restart is needed", r.Detail.Contains("no restart is needed"), true);
+    Check("cleanly blocked: state stays clean", (await hw.ReadAsync()).Condition, BluetoothCondition.Clean);
+    r = await o.SwitchAsync(AdapterRole.Internal, null);
+    Check("cleanly blocked: a second attempt is allowed", hw.RunCount, 2);
+
     // The live reader must be able to ask Windows; an unknown device gives "unknown".
     Check("unknown device: restart flag is unknown, not false", DevNode.NeedsRestart(@"USB\VID_FFFF&PID_FFFF\NOPE"), null);
 });

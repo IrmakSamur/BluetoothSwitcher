@@ -22,6 +22,12 @@ public enum SimulationMode
     /// did on 2026-11-11: the adapter keeps running but is flagged as needing a restart.
     /// </summary>
     VetoedNeedsRestart,
+
+    /// <summary>
+    /// The two-phase engine's stop request is refused: nothing is written, the adapter
+    /// keeps running, no restart flag, exit code 6.
+    /// </summary>
+    BlockedCleanly,
 }
 
 /// <summary>
@@ -123,6 +129,13 @@ public sealed class SimulatedHardware : IDeviceStateReader, ISwitchRunner
 
         Log("INFO", "Step 1/4: disable the active adapter.");
         await Wait(300);
+
+        if (Mode == SimulationMode.BlockedCleanly)
+        {
+            Log("ERROR", "Windows refused to stop the adapter: it is in use by 'steam.exe' (veto type OutstandingOpen). Nothing was written.");
+            Log("WARN", "Blocked. No restart is needed.");
+            return Exit(6);
+        }
 
         if (Mode == SimulationMode.VetoedNeedsRestart)
         {

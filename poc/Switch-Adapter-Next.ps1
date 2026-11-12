@@ -127,29 +127,34 @@ function Test-Elevated {
 
 # ---------------------------------------------------------------- Configuration Manager
 
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-
-public static class BtsSwitchCm
-{
-    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    public static extern uint CM_Locate_DevNodeW(out uint devInst, string deviceId, uint flags);
-
-    [DllImport("cfgmgr32.dll", ExactSpelling = true)]
-    public static extern uint CM_Get_DevNode_Status(out uint status, out uint problem, uint devInst, uint flags);
-
-    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    public static extern uint CM_Query_And_Remove_SubTreeW(uint devInst, out int vetoType, StringBuilder vetoName, uint nameLength, uint flags);
-
-    [DllImport("cfgmgr32.dll", ExactSpelling = true)]
-    public static extern uint CM_Setup_DevNode(uint devInst, uint flags);
-
-    [DllImport("cfgmgr32.dll", ExactSpelling = true)]
-    public static extern uint CM_Disable_DevNode(uint devInst, uint flags);
+# The cfgmgr32 functions are declared in memory with Reflection.Emit, not with
+# "Add-Type -TypeDefinition". Add-Type would run the C# compiler and write source and
+# assembly files to the temp folder while this script is elevated; nothing here touches disk.
+function Initialize-CmApi {
+    $name     = New-Object System.Reflection.AssemblyName 'BtsSwitchCmDynamic'
+    $assembly = [AppDomain]::CurrentDomain.DefineDynamicAssembly($name, [System.Reflection.Emit.AssemblyBuilderAccess]::Run)
+    $module   = $assembly.DefineDynamicModule('BtsSwitchCmDynamic')
+    $type     = $module.DefineType('BtsSwitchCm', 'Public, Class, Sealed, Abstract')
+    $uint     = [uint32]
+    $signatures = @(
+        @{ Name = 'CM_Locate_DevNodeW';           Args = @($uint.MakeByRefType(), [string], $uint) }
+        @{ Name = 'CM_Get_DevNode_Status';        Args = @($uint.MakeByRefType(), $uint.MakeByRefType(), $uint, $uint) }
+        @{ Name = 'CM_Query_And_Remove_SubTreeW'; Args = @($uint, [int].MakeByRefType(), [System.Text.StringBuilder], $uint, $uint) }
+        @{ Name = 'CM_Setup_DevNode';             Args = @($uint, $uint) }
+        @{ Name = 'CM_Disable_DevNode';           Args = @($uint, $uint) }
+    )
+    foreach ($s in $signatures) {
+        $method = $type.DefinePInvokeMethod($s.Name, 'cfgmgr32.dll',
+            [System.Reflection.MethodAttributes]'Public, Static, PinvokeImpl',
+            [System.Reflection.CallingConventions]::Standard,
+            $uint, [Type[]]$s.Args,
+            [System.Runtime.InteropServices.CallingConvention]::Winapi,
+            [System.Runtime.InteropServices.CharSet]::Unicode)
+        $method.SetImplementationFlags($method.GetMethodImplementationFlags() -bor [System.Reflection.MethodImplAttributes]::PreserveSig)
+    }
+    return $type.CreateType()
 }
-'@
+$script:Cm = Initialize-CmApi
 
 $CR_REMOVE_VETOED     = 0x17
 $DN_NEED_RESTART      = 0x100
@@ -164,7 +169,7 @@ $VetoTypes = @('Unknown', 'LegacyDevice', 'PendingClose', 'WindowsApp', 'Windows
 function Get-DevInst {
     param([string]$InstanceId)
     $devInst = [uint32]0
-    $cr = [BtsSwitchCm]::CM_Locate_DevNodeW([ref]$devInst, $InstanceId, 0)
+    $cr = $script:Cm::CM_Locate_DevNodeW([ref]$devInst, $InstanceId, 0)
     if ($cr -ne 0) { throw "CM_Locate_DevNode failed for $InstanceId (0x$('{0:X}' -f $cr))." }
     return $devInst
 }
@@ -175,7 +180,7 @@ function Get-DevInst {
 function Get-CmStatus {
     param([string]$InstanceId)
     $status = [uint32]0; $problem = [uint32]0
-    $cr = [BtsSwitchCm]::CM_Get_DevNode_Status([ref]$status, [ref]$problem, (Get-DevInst $InstanceId), 0)
+    $cr = $script:Cm::CM_Get_DevNode_Status([ref]$status, [ref]$problem, (Get-DevInst $InstanceId), 0)
     if ($cr -ne 0) { throw "CM_Get_DevNode_Status failed (0x$('{0:X}' -f $cr))." }
     [pscustomobject]@{ Problem = [int]$problem; NeedsRestart = [bool]($status -band $DN_NEED_RESTART) }
 }
@@ -185,7 +190,7 @@ function Invoke-CmQueryRemove {
     param([string]$InstanceId)
     $name = New-Object System.Text.StringBuilder 520
     $vetoType = 0
-    $cr = [BtsSwitchCm]::CM_Query_And_Remove_SubTreeW((Get-DevInst $InstanceId), [ref]$vetoType, $name, 260,
+    $cr = $script:Cm::CM_Query_And_Remove_SubTreeW((Get-DevInst $InstanceId), [ref]$vetoType, $name, 260,
               ($CM_REMOVE_UI_NOT_OK -bor $CM_REMOVE_NO_RESTART))
     $typeName = if ($vetoType -ge 0 -and $vetoType -lt $VetoTypes.Count) { $VetoTypes[$vetoType] } else { "$vetoType" }
     [pscustomobject]@{ Code = [int]$cr; VetoType = $typeName; VetoName = $name.ToString() }
@@ -194,13 +199,13 @@ function Invoke-CmQueryRemove {
 # Marks an already-stopped device as disabled across restarts. Returns the CM code.
 function Invoke-CmDisablePersist {
     param([string]$InstanceId)
-    return [int][BtsSwitchCm]::CM_Disable_DevNode((Get-DevInst $InstanceId), ($CM_DISABLE_UI_NOT_OK -bor $CM_DISABLE_PERSIST))
+    return [int]$script:Cm::CM_Disable_DevNode((Get-DevInst $InstanceId), ($CM_DISABLE_UI_NOT_OK -bor $CM_DISABLE_PERSIST))
 }
 
 # Starts a device again after a non-persistent stop. Returns the CM code.
 function Invoke-CmSetupDevNode {
     param([string]$InstanceId)
-    return [int][BtsSwitchCm]::CM_Setup_DevNode((Get-DevInst $InstanceId), 0)
+    return [int]$script:Cm::CM_Setup_DevNode((Get-DevInst $InstanceId), 0)
 }
 
 # ---------------------------------------------------------------- device state (read-only)
